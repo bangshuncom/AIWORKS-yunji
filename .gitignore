@@ -41,5 +41,5 @@ coverage
 *.sw?
 
 # Local helper scripts (machine-specific paths, not for repo)
-git.bat
-release.bat
+/*.bat
+/*.ps1
