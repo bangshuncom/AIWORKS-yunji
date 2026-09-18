@@ -102,6 +102,8 @@ export function TrashPage() {
     <div className={s.pageContainer}>
       <div className={s.pageHeader}>
         <h2 style={{ margin: 0 }}>回收站</h2>
+      </div>
+      <div>
         <Button appearance="outline" onClick={() => navigate('/')}>返回首页</Button>
       </div>
 

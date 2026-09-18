@@ -43,3 +43,6 @@ coverage
 # Local helper scripts (machine-specific paths, not for repo)
 /*.bat
 /*.ps1
+
+# Test scripts and temp files
+test/

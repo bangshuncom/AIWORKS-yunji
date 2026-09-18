@@ -20,7 +20,7 @@ import {
   DialogOpenChangeData,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, RenameRegular, DeleteRegular, MergeRegular, SearchRegular } from '@fluentui/react-icons';
+import { AddRegular, RenameRegular, DeleteRegular, MergeRegular } from '@fluentui/react-icons';
 import { tagApi } from '../lib/tauri';
 import type { Tag } from '../types/models';
 import { useSelection, CardCheckbox, BatchBar, runBatchAction } from '../components/batch';
@@ -44,11 +44,10 @@ export function TagsPage() {
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTarget, setMergeTarget] = useState<number | null>(null);
   const [page, setPage] = useState(1);
-  const [keyword, setKeyword] = useState('');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['tags', 'paged', page, keyword],
-    queryFn: () => tagApi.listPage(page, PAGE_SIZE, keyword || undefined),
+    queryKey: ['tags', 'paged', page],
+    queryFn: () => tagApi.listPage(page, PAGE_SIZE),
   });
   const tags = data?.items;
   const total = data?.total ?? 0;
@@ -62,7 +61,7 @@ export function TagsPage() {
   useEffect(() => {
     selection.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, keyword]);
+  }, [page]);
 
   const createMut = useMutation({
     mutationFn: (name: string) => tagApi.create(name),
@@ -146,16 +145,6 @@ export function TagsPage() {
     <div className={s.pageContainer}>
       <div className={s.pageHeader}>
         <h2 style={{ margin: 0 }}>标签管理</h2>
-        <Input
-          style={{ width: '220px' }}
-          placeholder="搜索标签"
-          value={keyword}
-          onChange={(_, d) => {
-            setKeyword(d.value);
-            setPage(1);
-          }}
-          contentBefore={<SearchRegular />}
-        />
       </div>
 
       {canTag && (
@@ -185,7 +174,7 @@ export function TagsPage() {
         <Spinner label="加载中..." />
       ) : !tags || tags.length === 0 ? (
         <Card>
-          <CardHeader header={<span>{keyword ? '没有匹配的标签' : '暂无标签'}</span>} />
+          <CardHeader header={<span>暂无标签</span>} />
         </Card>
       ) : (
         <>

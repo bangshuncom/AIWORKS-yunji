@@ -6352,7 +6352,7 @@ dependencies = [
 
 [[package]]
 name = "yunji-tauri"
-version = "26.9.16"
+version = "26.9.18"
 dependencies = [
  "anyhow",
  "argon2",

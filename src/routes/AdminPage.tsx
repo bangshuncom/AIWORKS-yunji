@@ -42,15 +42,17 @@ import {
   ImageRegular,
   DocumentRegular,
   DesktopRegular,
+  GlobeRegular,
   SearchRegular,
+  AddRegular,
 } from '@fluentui/react-icons';
-import { settingsApi, userApi, authApi, assetUrl, cleanupApi, torrentApi } from '../lib/tauri';
+import { settingsApi, userApi, assetUrl, cleanupApi, torrentApi } from '../lib/tauri';
 import type { OrphanFile } from '../lib/tauri';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useAuthStore } from '../stores/authStore';
 import { usePerms } from '../hooks/usePerms';
 import { useSelection, BatchBar } from '../components/batch';
-import { AvatarCropDialog } from '../components/AvatarCropDialog';
+import { UserEditDialog } from '../components/UserEditDialog';
 import { Pagination } from '../components/Pagination';
 import { formatBytes } from '../lib/format';
 import type { AdminUser } from '../types/models';
@@ -166,7 +168,7 @@ const useStyles = makeStyles({
   },
 });
 
-type TabId = 'general' | 'users' | 'permissions' | 'cleanup';
+type TabId = 'general' | 'users' | 'permissions' | 'proxy' | 'cleanup';
 
 export function AdminPage() {
   const { isAdmin, can, settingsLoaded } = usePerms();
@@ -176,6 +178,7 @@ export function AdminPage() {
   if (isAdmin) tabs.push({ id: 'general', label: '常规设置' });
   if (canUser) tabs.push({ id: 'users', label: '用户管理' });
   if (isAdmin) tabs.push({ id: 'permissions', label: '权限管理' });
+  if (isAdmin) tabs.push({ id: 'proxy', label: '代理设置' });
   if (isAdmin) tabs.push({ id: 'cleanup', label: '附件清理' });
 
   const [tab, setTab] = useState<TabId | null>(tabs[0]?.id ?? null);
@@ -214,6 +217,7 @@ export function AdminPage() {
       {tab === 'general' && isAdmin && <GeneralTab />}
       {tab === 'users' && canUser && <UsersTab />}
       {tab === 'permissions' && isAdmin && <PermissionsTab />}
+      {tab === 'proxy' && isAdmin && <ProxyTab />}
       {tab === 'cleanup' && isAdmin && <CleanupTab />}
     </div>
   );
@@ -252,6 +256,10 @@ function GeneralTab() {
     queryClient.invalidateQueries({ queryKey: ['public-settings'] });
   };
 
+  const logoMode = form.logo_mode ?? 'text';
+  const logoPath = form.logo_image_path ?? '';
+  const iconPath = form.logo_icon_path ?? '';
+
   const pickLogo = async (kind: 'image' | 'icon') => {
     setLogoError('');
     const selected = await openDialog({
@@ -263,6 +271,10 @@ function GeneralTab() {
     try {
       const savedPath = await settingsApi.uploadLogo(selected, kind);
       set(kind === 'image' ? 'logo_image_path' : 'logo_icon_path', savedPath);
+      // 把当前选择的 LOGO 模式一并落库：
+      // 否则 refreshSettings 重拉后，未保存的模式会被数据库旧值覆盖，
+      // 单选框跳回旧模式、预览区消失（表现为上传/预览“不能用”）
+      await settingsApi.update({ logo_mode: logoMode });
       refreshSettings();
     } catch (e: any) {
       setLogoError(e.message || 'LOGO 上传失败');
@@ -277,6 +289,8 @@ function GeneralTab() {
     try {
       await settingsApi.clearLogo(kind);
       set(kind === 'image' ? 'logo_image_path' : 'logo_icon_path', '');
+      // 同 pickLogo：模式一并落库，避免重拉后被旧值覆盖
+      await settingsApi.update({ logo_mode: logoMode });
       refreshSettings();
     } catch (e: any) {
       setLogoError(e.message || 'LOGO 清除失败');
@@ -284,10 +298,6 @@ function GeneralTab() {
       setLogoBusy(false);
     }
   };
-
-  const logoMode = form.logo_mode ?? 'text';
-  const logoPath = form.logo_image_path ?? '';
-  const iconPath = form.logo_icon_path ?? '';
 
   return (
     <div className={styles.container}>
@@ -323,8 +333,9 @@ function GeneralTab() {
                 style={
                   logoMode === 'image'
                     ? {
-                        width: '120px',
-                        height: '48px',
+                        // 与侧边栏 LOGO 区域同尺寸（220×64、cover 铺满），预览即最终效果
+                        width: '220px',
+                        height: '64px',
                         border: `1px solid ${tokens.colorNeutralStroke2}`,
                         borderRadius: '8px',
                         display: 'flex',
@@ -351,7 +362,7 @@ function GeneralTab() {
                     <img
                       src={assetUrl(logoPath)}
                       alt="LOGO"
-                      style={{ maxWidth: '90%', maxHeight: '90%', objectFit: 'contain' }}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
                   ) : (
                     <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
@@ -437,6 +448,65 @@ function GeneralTab() {
 
       <Card className={styles.card}>
         <div className={styles.title}>
+          <GlobeRegular /> 链接打开方式
+        </div>
+        <div className={styles.field}>
+          <Label id="link_mode_label">正文中的外部链接点击时</Label>
+          <RadioGroup
+            aria-labelledby="link_mode_label"
+            value={form.link_open_mode ?? 'default'}
+            onChange={(_, d) => set('link_open_mode', d.value)}
+          >
+            <Radio value="default" label="系统默认浏览器" />
+            <Radio value="custom" label="指定浏览器" />
+          </RadioGroup>
+        </div>
+        {(form.link_open_mode ?? 'default') === 'custom' && (
+          <div className={styles.field}>
+            <Label htmlFor="browser_path">浏览器路径（可执行文件）</Label>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <Input
+                id="browser_path"
+                style={{ flex: 1 }}
+                value={form.browser_path ?? ''}
+                onChange={(_, d) => set('browser_path', d.value)}
+                placeholder="如 C:\Program Files\Google\Chrome\Application\chrome.exe"
+              />
+              <Button
+                appearance="outline"
+                icon={<FolderOpenRegular />}
+                onClick={async () => {
+                  const selected = await openDialog({
+                    multiple: false,
+                    filters: [{ name: '可执行文件', extensions: ['exe'] }],
+                  });
+                  if (typeof selected === 'string') set('browser_path', selected);
+                }}
+              >
+                浏览
+              </Button>
+            </div>
+            <div style={{ fontSize: '12px', color: tokens.colorNeutralForeground3, marginTop: '4px' }}>
+              指定浏览器时，点击正文外链将用该浏览器打开；留空则回退系统默认浏览器
+            </div>
+          </div>
+        )}
+        <Button
+          appearance="primary"
+          onClick={() =>
+            updateMut.mutate({
+              link_open_mode: form.link_open_mode ?? 'default',
+              browser_path: form.browser_path ?? '',
+            })
+          }
+          disabled={updateMut.isPending}
+        >
+          保存
+        </Button>
+      </Card>
+
+      <Card className={styles.card}>
+        <div className={styles.title}>
           <CloudRegular /> 存储后端
         </div>
         <div className={styles.field}>
@@ -474,29 +544,19 @@ function GeneralTab() {
 
 // --- 用户管理 ---
 
-interface EditForm {
-  username: string;
-  nickname: string;
-  email: string;
-  bio: string;
-  permission_level: number;
-  new_password: string;
-}
-
 function UsersTab() {
   const styles = useStyles();
   const queryClient = useQueryClient();
   const selection = useSelection();
   const currentUserId = useAuthStore((s) => s.user?.id);
-  const refreshMe = useAuthStore((s) => s.setUser);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [editTarget, setEditTarget] = useState<AdminUser | null>(null);
-  const [cropTarget, setCropTarget] = useState<{ userId: number; file: string } | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>({
-    username: '', nickname: '', email: '', bio: '', permission_level: 0, new_password: '',
-  });
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState('');
+  // 新建用户
+  const [createOpen, setCreateOpen] = useState(false);
+  const [batchCreateOpen, setBatchCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({ username: '', nickname: '', email: '', password: '', permission_level: 0 });
   const PAGE_SIZE = 36;
 
   const { data, isLoading } = useQuery({
@@ -520,74 +580,91 @@ function UsersTab() {
 
   const deleteMut = useMutation({
     mutationFn: (ids: number[]) => userApi.deleteMany(ids),
-    onSuccess: () => {
+    onSuccess: (res) => {
       invalidate();
-      setMsg({ ok: true, text: '用户已删除' });
+      const parts = [`已删除 ${res.deleted} 个用户`];
+      if (res.skipped > 0) parts.push(`自动跳过 ${res.skipped} 个（自己/权限不足）`);
+      setMsg({ ok: true, text: parts.join('，') });
     },
     onError: (e: Error) => setMsg({ ok: false, text: e.message || '删除失败' }),
   });
 
-  const updateMut = useMutation({
-    mutationFn: userApi.update,
-    onSuccess: () => {
-      invalidate();
-      setEditTarget(null);
-      setMsg({ ok: true, text: '用户信息已保存' });
-    },
-    onError: (e: Error) => setMsg({ ok: false, text: e.message || '保存失败' }),
-  });
-
   const userIds = users.map((u) => u.id);
 
-  const batchDelete = () => {
+  const batchDelete = async () => {
     const ids = Array.from(selection.selected);
     if (ids.length === 0) return;
-    if (!confirm(`确认删除选中的 ${ids.length} 个用户？此操作不可恢复！`)) return;
-    deleteMut.mutate(ids, { onSettled: () => selection.clear() });
+    // 第一层确认（任何情况下先弹，不依赖任何异步请求）
+    if (!confirm(`确认删除选中的 ${ids.length} 个用户？此操作不可恢复！（自己和权限不足的账户会被自动跳过）`)) return;
+    try {
+      // 拉全量用户判断目标权限（分页数据可能不含选中项）
+      const all = await userApi.list();
+      const targets = all.filter((u) => ids.includes(u.id));
+      // 初始 admin = id 最小的管理员账户
+      const adminIds = all.filter((u) => u.is_admin).map((u) => u.id);
+      const isInitialAdmin = adminIds.length > 0 && currentUserId === Math.min(...adminIds);
+      // 初始 admin 删除权限 5 目标：二次确认（批量只弹一次）
+      if (isInitialAdmin) {
+        const highTargets = targets.filter((u) => u.is_admin || u.permission_level >= 5);
+        if (highTargets.length > 0) {
+          if (!confirm(`选中的用户中包含 ${highTargets.length} 个权限 5 的账户，确认一并删除？此操作不可恢复！`)) return;
+        }
+      }
+      deleteMut.mutate(ids, { onSettled: () => selection.clear() });
+    } catch (e: any) {
+      setMsg({ ok: false, text: e?.message || '删除失败' });
+    }
   };
 
   const openEdit = (u: AdminUser) => {
     setMsg(null);
     setEditTarget(u);
-    setEditForm({
-      username: u.username,
-      nickname: u.nickname,
-      email: u.email,
-      bio: u.bio,
-      permission_level: u.is_admin ? 5 : u.permission_level,
-      new_password: '',
-    });
   };
 
-  const saveEdit = () => {
-    if (!editTarget) return;
-    const editingSelf = editTarget.id === currentUserId;
-    updateMut.mutate({
-      user_id: editTarget.id,
-      username: editForm.username.trim(),
-      nickname: editForm.nickname.trim(),
-      email: editForm.email.trim(),
-      bio: editForm.bio,
-      permission_level: editForm.permission_level,
-      new_password: editForm.new_password.trim() || null,
-    }, {
-      onSuccess: async () => {
-        // 编辑的是自己：刷新登录态，导航栏昵称等立即生效
-        if (editingSelf) {
-          const fresh = await authApi.me();
-          if (fresh) refreshMe(fresh);
-        }
-      },
-    });
-  };
+  // 新建单个用户
+  const createMut = useMutation({
+    mutationFn: userApi.create,
+    onSuccess: () => {
+      invalidate();
+      setCreateOpen(false);
+      setCreateForm({ username: '', nickname: '', email: '', password: '', permission_level: 0 });
+      setMsg({ ok: true, text: '用户已创建' });
+    },
+    onError: (e: Error) => setMsg({ ok: false, text: e.message || '创建失败' }),
+  });
 
-  const handlePickAvatar = async (userId: number) => {
-    const selected = await openDialog({
-      multiple: false,
-      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }],
-    });
-    const filePath = typeof selected === 'string' ? selected : null;
-    if (filePath) setCropTarget({ userId, file: filePath });
+  // 批量新建：多行文本，每行 "用户名,密码" 或 "用户名,密码,昵称"
+  const [batchText, setBatchText] = useState('');
+  const [batchPerm, setBatchPerm] = useState(0);
+  const batchCreateMut = useMutation({
+    mutationFn: async (lines: { username: string; password: string; nickname: string }[]) => {
+      for (const l of lines) {
+        await userApi.create({ ...l, email: '', permission_level: batchPerm });
+      }
+    },
+    onSuccess: () => {
+      invalidate();
+      setBatchCreateOpen(false);
+      setBatchText('');
+      setMsg({ ok: true, text: '批量创建完成' });
+    },
+    onError: (e: Error) => setMsg({ ok: false, text: e.message || '批量创建失败' }),
+  });
+
+  const handleBatchCreate = () => {
+    const lines = batchText.trim().split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => {
+        const [username, password, nickname] = l.split(',').map((s) => s.trim());
+        return { username: username || '', password: password || '', nickname: nickname || username || '' };
+      })
+      .filter((l) => l.username && l.password);
+    if (lines.length === 0) {
+      setMsg({ ok: false, text: '每行格式：用户名,密码[,昵称]' });
+      return;
+    }
+    batchCreateMut.mutate(lines);
   };
 
   return (
@@ -596,16 +673,34 @@ function UsersTab() {
         <div className={styles.title}>
           <PersonRegular /> 用户管理
         </div>
-        <Input
-          style={{ width: '220px' }}
-          placeholder="搜索用户名 / 昵称 / 邮箱"
-          value={keyword}
-          onChange={(_, d) => {
-            setKeyword(d.value);
-            setPage(1);
-          }}
-          contentBefore={<SearchRegular />}
-        />
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <Button
+            appearance="primary"
+            size="small"
+            icon={<AddRegular />}
+            onClick={() => { setCreateForm({ username: '', nickname: '', email: '', password: '', permission_level: 0 }); setCreateOpen(true); }}
+          >
+            新建用户
+          </Button>
+          <Button
+            appearance="outline"
+            size="small"
+            icon={<AddRegular />}
+            onClick={() => setBatchCreateOpen(true)}
+          >
+            批量新建
+          </Button>
+          <Input
+            style={{ width: '200px' }}
+            placeholder="搜索用户名 / 昵称 / 邮箱"
+            value={keyword}
+            onChange={(_, d) => {
+              setKeyword(d.value);
+              setPage(1);
+            }}
+            contentBefore={<SearchRegular />}
+          />
+        </div>
       </div>
 
       {msg && (
@@ -686,132 +781,228 @@ function UsersTab() {
         </Button>
       </BatchBar>
 
-      {/* 编辑用户对话框 */}
-      <Dialog open={editTarget != null} onOpenChange={(_, d) => { if (!d.open) setEditTarget(null); }}>
+      {/* 编辑用户对话框（公共组件，与作者页共用） */}
+      <UserEditDialog
+        target={editTarget}
+        onClose={() => setEditTarget(null)}
+        onChanged={() => setMsg({ ok: true, text: '用户信息已保存' })}
+      />
+
+      {/* 新建用户对话框 */}
+      <Dialog open={createOpen} onOpenChange={(_, d) => setCreateOpen(d.open)}>
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>
-              编辑用户（{editTarget?.nickname || editTarget?.username}）
-            </DialogTitle>
+            <DialogTitle>新建用户</DialogTitle>
             <DialogContent>
-              <div className={styles.field}>
-                <Label>头像</Label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <Avatar
-                    size={56}
-                    name={editForm.nickname || editForm.username}
-                    image={editTarget?.avatar_path ? { src: assetUrl(editTarget.avatar_path) } : undefined}
-                  />
-                  <Button
-                    appearance="outline"
-                    size="small"
-                    icon={<ImageRegular />}
-                    onClick={() => editTarget && handlePickAvatar(editTarget.id)}
-                  >
-                    更换头像
-                  </Button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <Label htmlFor="cu_username">用户名</Label>
+                  <Input id="cu_username" value={createForm.username}
+                    onChange={(_, d) => setCreateForm((f) => ({ ...f, username: d.value }))} />
                 </div>
-              </div>
-              <div className={styles.field}>
-                <Label htmlFor="eu_username">用户名</Label>
-                <Input
-                  id="eu_username"
-                  value={editForm.username}
-                  onChange={(_, d) => setEditForm((f) => ({ ...f, username: d.value }))}
-                />
-              </div>
-              <div className={styles.field}>
-                <Label htmlFor="eu_nickname">昵称</Label>
-                <Input
-                  id="eu_nickname"
-                  value={editForm.nickname}
-                  onChange={(_, d) => setEditForm((f) => ({ ...f, nickname: d.value }))}
-                />
-              </div>
-              <div className={styles.field}>
-                <Label htmlFor="eu_email">邮箱</Label>
-                <Input
-                  id="eu_email"
-                  value={editForm.email}
-                  onChange={(_, d) => setEditForm((f) => ({ ...f, email: d.value }))}
-                />
-              </div>
-              <div className={styles.field}>
-                <Label htmlFor="eu_bio">简介</Label>
-                <Textarea
-                  id="eu_bio"
-                  value={editForm.bio}
-                  onChange={(_, d) => setEditForm((f) => ({ ...f, bio: d.value }))}
-                />
-              </div>
-              <div className={styles.field}>
-                <Label htmlFor="eu_level">权限值</Label>
-                <Dropdown
-                  id="eu_level"
-                  value={editTarget?.is_admin ? '5 - 仅管理员（管理员固定 5）' : levelText(editForm.permission_level)}
-                  selectedOptions={[String(editForm.permission_level)]}
-                  disabled={!!editTarget?.is_admin}
-                  onOptionSelect={(_, d) =>
-                    d.optionValue && setEditForm((f) => ({ ...f, permission_level: Number(d.optionValue) }))
-                  }
-                >
-                  {LEVEL_OPTIONS.map((n) => (
-                    <Option key={n} value={String(n)} text={levelText(n)}>
-                      {levelText(n)}
-                    </Option>
-                  ))}
-                </Dropdown>
-              </div>
-              <div className={styles.field}>
-                <Label htmlFor="eu_pwd">新密码（留空则不修改）</Label>
-                <Input
-                  id="eu_pwd"
-                  type="password"
-                  placeholder="至少 6 位"
-                  value={editForm.new_password}
-                  onChange={(_, d) => setEditForm((f) => ({ ...f, new_password: d.value }))}
-                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <Label htmlFor="cu_nickname">昵称</Label>
+                  <Input id="cu_nickname" value={createForm.nickname}
+                    onChange={(_, d) => setCreateForm((f) => ({ ...f, nickname: d.value }))}
+                    placeholder="留空则使用用户名" />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <Label htmlFor="cu_email">邮箱（可选）</Label>
+                  <Input id="cu_email" value={createForm.email}
+                    onChange={(_, d) => setCreateForm((f) => ({ ...f, email: d.value }))} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <Label htmlFor="cu_pwd">密码</Label>
+                  <Input id="cu_pwd" type="password" value={createForm.password}
+                    onChange={(_, d) => setCreateForm((f) => ({ ...f, password: d.value }))}
+                    placeholder="至少 6 位" />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <Label htmlFor="cu_level">权限值</Label>
+                  <Dropdown id="cu_level"
+                    value={levelText(createForm.permission_level)}
+                    selectedOptions={[String(createForm.permission_level)]}
+                    onOptionSelect={(_, d) => d.optionValue && setCreateForm((f) => ({ ...f, permission_level: Number(d.optionValue) }))}
+                  >
+                    {LEVEL_OPTIONS.map((n) => (
+                      <Option key={n} value={String(n)} text={levelText(n)}>{levelText(n)}</Option>
+                    ))}
+                  </Dropdown>
+                </div>
               </div>
             </DialogContent>
             <DialogActions>
-              <Button appearance="secondary" onClick={() => setEditTarget(null)}>
-                取消
-              </Button>
-              <Button
-                appearance="primary"
-                disabled={
-                  updateMut.isPending ||
-                  !editForm.username.trim() ||
-                  !editForm.nickname.trim() ||
-                  (editForm.new_password.length > 0 && editForm.new_password.length < 6)
-                }
-                onClick={saveEdit}
+              <Button appearance="secondary" onClick={() => setCreateOpen(false)}>取消</Button>
+              <Button appearance="primary"
+                disabled={createMut.isPending || !createForm.username.trim() || !createForm.password.trim() || createForm.password.length < 6}
+                onClick={() => createMut.mutate({
+                  username: createForm.username.trim(),
+                  nickname: createForm.nickname.trim() || createForm.username.trim(),
+                  email: createForm.email.trim(),
+                  password: createForm.password,
+                  permission_level: createForm.permission_level,
+                })}
               >
-                保存
+                创建
               </Button>
             </DialogActions>
           </DialogBody>
         </DialogSurface>
       </Dialog>
 
-      {/* 裁剪并设置目标用户头像 */}
-      {cropTarget && (
-        <AvatarCropDialog
-          filePath={cropTarget.file}
-          targetUserId={cropTarget.userId}
-          onClose={() => setCropTarget(null)}
-          onUploaded={async (path) => {
-            invalidate();
-            setEditTarget((t) => (t && t.id === cropTarget.userId ? { ...t, avatar_path: path } : t));
-            setMsg({ ok: true, text: '头像已更新' });
-            // 改的是自己：刷新登录态，导航栏头像立即生效
-            if (cropTarget.userId === currentUserId) {
-              const fresh = await authApi.me();
-              if (fresh) refreshMe(fresh);
-            }
-          }}
-        />
+      {/* 批量新建用户对话框 */}
+      <Dialog open={batchCreateOpen} onOpenChange={(_, d) => setBatchCreateOpen(d.open)}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>批量新建用户</DialogTitle>
+            <DialogContent>
+              <p style={{ marginTop: 0, fontSize: '13px', color: tokens.colorNeutralForeground2 }}>
+                每行一个用户，格式：<code>用户名,密码</code> 或 <code>用户名,密码,昵称</code>。昵称留空则使用用户名。
+              </p>
+              <Textarea
+                style={{ width: '100%', fontFamily: 'monospace' }}
+                rows={8}
+                resize="vertical"
+                placeholder={'user1,123456\nuser2,abc789,小明\nuser3,xyz321'}
+                value={batchText}
+                onChange={(_, d) => setBatchText(d.value)}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px' }}>
+                <Label>统一权限值</Label>
+                <Dropdown
+                  style={{ minWidth: '200px' }}
+                  value={levelText(batchPerm)}
+                  selectedOptions={[String(batchPerm)]}
+                  onOptionSelect={(_, d) => d.optionValue && setBatchPerm(Number(d.optionValue))}
+                >
+                  {LEVEL_OPTIONS.map((n) => (
+                    <Option key={n} value={String(n)} text={levelText(n)}>{levelText(n)}</Option>
+                  ))}
+                </Dropdown>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setBatchCreateOpen(false)}>取消</Button>
+              <Button appearance="primary"
+                disabled={batchCreateMut.isPending || !batchText.trim()}
+                onClick={handleBatchCreate}
+              >
+                {batchCreateMut.isPending ? '创建中...' : '批量创建'}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+    </Card>
+  );
+}
+
+// --- 代理设置 ---
+
+const PROXY_MODES = [
+  { value: 'system', label: '系统代理', hint: '自动读取 Windows 系统代理 / 环境变量（默认）' },
+  { value: 'none', label: '不使用代理', hint: '所有网络请求直连' },
+  { value: 'custom', label: '自定义代理', hint: '手动指定代理服务器地址' },
+];
+
+function ProxyTab() {
+  const styles = useStyles();
+  const queryClient = useQueryClient();
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: settingsApi.get,
+  });
+  const { data: status } = useQuery({
+    queryKey: ['proxy-status'],
+    queryFn: settingsApi.getProxyStatus,
+    refetchInterval: 10_000,
+  });
+
+  const [mode, setMode] = useState('system');
+  const [customUrl, setCustomUrl] = useState('');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (settings && !loaded) {
+      setMode(settings.proxy_mode ?? 'system');
+      setCustomUrl(settings.proxy_url ?? '');
+      setLoaded(true);
+    }
+  }, [settings, loaded]);
+
+  const saveMut = useMutation({
+    mutationFn: (payload: Record<string, string>) => settingsApi.update(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['proxy-status'] });
+      setMsg({ ok: true, text: '代理设置已保存并生效' });
+    },
+    onError: (e: Error) => setMsg({ ok: false, text: e.message || '保存失败' }),
+  });
+
+  const save = () => {
+    if (mode === 'custom' && !customUrl.trim()) {
+      setMsg({ ok: false, text: '自定义模式需要填写代理地址' });
+      return;
+    }
+    saveMut.mutate({ proxy_mode: mode, proxy_url: customUrl.trim() });
+  };
+
+  return (
+    <Card className={styles.card}>
+      <div className={styles.title}>
+        <CloudRegular /> 代理设置
+      </div>
+      <p style={{ marginTop: 0, fontSize: '13px', color: tokens.colorNeutralForeground2 }}>
+        影响网页采集、封面/图集下载、编辑器粘贴图片本地化等应用内网络请求。保存后立即生效。
+      </p>
+      <div className={styles.field}>
+        <Label>代理模式</Label>
+        <RadioGroup
+          value={mode}
+          onChange={(_, d) => setMode(d.value)}
+        >
+          {PROXY_MODES.map((m) => (
+            <Radio key={m.value} value={m.value} label={m.label} />
+          ))}
+        </RadioGroup>
+        <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
+          {PROXY_MODES.find((m) => m.value === mode)?.hint}
+        </span>
+      </div>
+      {mode === 'custom' && (
+        <div className={styles.field}>
+          <Label htmlFor="proxy_url">代理地址</Label>
+          <Input
+            id="proxy_url"
+            value={customUrl}
+            onChange={(_, d) => setCustomUrl(d.value)}
+            placeholder="127.0.0.1:7890 或 http://host:port"
+            style={{ maxWidth: '360px' }}
+          />
+        </div>
       )}
+      {status && (
+        <div className={styles.field}>
+          <Label>当前生效</Label>
+          <Badge appearance={status.effective === '直连（无代理）' ? 'outline' : 'tint'} color={status.effective === '直连（无代理）' ? undefined : 'brand'}>
+            {status.effective}
+          </Badge>
+        </div>
+      )}
+      {msg && (
+        <MessageBar intent={msg.ok ? 'success' : 'error'} style={{ marginBottom: '12px' }}>
+          <MessageBarBody>
+            <MessageBarTitle>{msg.ok ? '成功' : '失败'}</MessageBarTitle>
+            {msg.text}
+          </MessageBarBody>
+        </MessageBar>
+      )}
+      <Button appearance="primary" onClick={save} disabled={saveMut.isPending}>
+        保存代理设置
+      </Button>
     </Card>
   );
 }

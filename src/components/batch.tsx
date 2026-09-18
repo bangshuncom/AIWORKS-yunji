@@ -131,13 +131,19 @@ const useBarStyles = makeStyles({
     alignItems: 'center',
     gap: '8px',
     padding: '8px 16px',
+    paddingRight: '44px',
     borderRadius: '10px',
     backgroundColor: tokens.colorNeutralBackground1,
     border: `1px solid ${tokens.colorBrandStroke1}`,
     boxShadow: tokens.shadow16,
     zIndex: 2000,
-    maxWidth: '90vw',
+    maxWidth: 'calc(90vw + 200px)',
     flexWrap: 'wrap',
+  },
+  cancelBtn: {
+    position: 'absolute',
+    top: '6px',
+    right: '6px',
   },
   actions: {
     display: 'flex',
@@ -188,14 +194,14 @@ export function BatchBar({
       <Badge appearance="filled" color="brand">已选 {selectedCount}</Badge>
       <span className={styles.actions}>{children}</span>
       <Button
+        className={styles.cancelBtn}
         appearance="subtle"
         size="small"
         icon={<DismissRegular />}
         onClick={onClear}
         disabled={busy}
-      >
-        取消
-      </Button>
+        title="取消选择"
+      />
     </div>
   );
 }

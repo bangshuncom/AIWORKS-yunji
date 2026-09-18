@@ -90,6 +90,12 @@ pub fn run() {
             let app_state = AppState::new(pool, storage, data_dir);
             app.manage(app_state);
 
+            // 启动时应用已保存的代理设置（system/none/custom）
+            tauri::async_runtime::block_on(async {
+                let state: tauri::State<AppState> = app.state();
+                commands::collector::apply_proxy_settings(&state).await;
+            });
+
             // 系统托盘（左键单击显示窗口，右键菜单：显示 / 退出）
             let show_item = MenuItem::with_id(app, "tray_show", "显示主窗口", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "tray_quit", "退出", true, None::<&str>)?;
@@ -156,6 +162,7 @@ pub fn run() {
             commands::users::list_authors,
             commands::users::list_authors_page,
             commands::users::admin_set_user_avatar,
+            commands::users::create_user,
             commands::users::delete_users,
             commands::users::reset_user_password,
             commands::users::update_user,
@@ -238,6 +245,9 @@ pub fn run() {
             commands::collector::import_collector,
             commands::collector::collector_set_thumbnail,
             commands::collector::collector_add_images,
+            commands::collector::download_remote_image,
+            commands::settings::get_proxy_status,
+            commands::settings::open_external_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

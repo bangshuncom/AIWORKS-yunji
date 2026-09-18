@@ -5,7 +5,6 @@ export interface Resource {
   title: string;
   description: string;
   content: string;
-  status: 'normal' | 'invalid' | 'archived';
   /** 阅读权限：0=公开（无需登录），>0 需要读者权限值 >= read_level */
   read_level: number;
   access_password: string;
@@ -166,7 +165,6 @@ export interface CreateResource {
   title: string;
   description: string;
   content: string;
-  status?: string;
   read_level?: number;
   access_password: string;
   thumbnail_path: string;
@@ -174,6 +172,7 @@ export interface CreateResource {
   collection_ids: number[];
   category_id?: number | null;
   items: CreateItem[];
+  author_id?: number;
 }
 
 export interface UserInfo {
@@ -226,6 +225,8 @@ export interface Collection {
   deleted_at: string | null;
   resource_count?: number;
   user_id?: number | null;
+  /** 列表展示用封面：自有封面为空时回退首个收录文章封面 */
+  cover_path?: string;
 }
 
 export interface CreateCollection {
@@ -235,6 +236,7 @@ export interface CreateCollection {
   access_password: string;
   thumbnail_path: string;
   content?: string;
+  author_id?: number;
 }
 
 // --- 附件类型元数据 ---

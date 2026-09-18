@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react';
 import Vditor from 'vditor';
 import 'vditor/dist/index.css';
-import { rewriteAssetDom, rewriteAssetHtml } from '../lib/tauri';
+import { rewriteAssetDom, rewriteAssetHtml, collectorApi } from '../lib/tauri';
 
 export interface UploadedAsset {
   /** 存储相对路径，如 content/20260912_123.jpg */
@@ -36,16 +36,78 @@ export function MarkdownEditor({ value, onChange, height = 480, placeholder = '�
   onChangeRef.current = onChange;
   uploadRef.current = upload;
 
+  // --- 粘贴远程图片本地化 ---
+  // Vditor 粘贴富文本时会把 <img src="https://..."> 转成远程链接的 markdown。
+  // 粘贴后扫描编辑器内容中的远程图片链接，逐个下载到本地 content/ 目录，
+  // 再把 markdown 中的远程 URL 替换为本地相对路径。
+  const localizingRef = useRef(false);
+  const lastScanRef = useRef('');
+  const scanAndLocalize = async (): Promise<boolean> => {
+    const vd = vditorRef.current;
+    if (!vd || !readyRef.current) return false;
+    const current = vd.getValue();
+    // 匹配 markdown 图片语法中的远程 http(s) URL（含空 alt、带 title 的形态）
+    const re = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)(?:\s+"[^"]*")?\)/g;
+    const urls = [...current.matchAll(re)].map((m) => m[1]);
+    if (urls.length === 0) return false;
+    if (current === lastScanRef.current) return false; // 上轮已处理过同样内容
+    lastScanRef.current = current;
+    if (localizingRef.current) return true;
+    localizingRef.current = true;
+    const failed: string[] = [];
+    try {
+      let next = current;
+      let done = 0;
+      for (const url of urls) {
+        try {
+          const saved = await collectorApi.downloadImage(url, '');
+          if (saved) {
+            next = next.split(url).join(saved);
+            done++;
+          }
+        } catch (e) {
+          // 单张失败跳过，保留原远程链接
+          failed.push(`${url.slice(0, 60)}… ${e instanceof Error ? e.message : ''}`);
+        }
+      }
+      if (next !== current) {
+        vd.setValue(next);
+        onChangeRef.current(next);
+      }
+      if (done > 0) {
+        vd.tip(`已本地化 ${done} 张图片${failed.length > 0 ? `，${failed.length} 张失败` : ''}`);
+      } else if (failed.length > 0) {
+        vd.tip(`图片本地化失败：${failed[0]}${failed.length > 1 ? ` 等 ${failed.length} 张` : ''}`);
+      }
+    } finally {
+      localizingRef.current = false;
+    }
+    return true;
+  };
+  const handlePasteLocalize = () => {
+    // Vditor 解析大段粘贴内容需要时间：多轮延迟扫描，直到发现并处理远程图片
+    for (const delay of [100, 400, 1000, 2000]) {
+      setTimeout(() => { void scanAndLocalize(); }, delay);
+    }
+  };
+
   // 初始化 Vditor 实例（仅一次）
   useEffect(() => {
     if (!containerRef.current) return;
 
     // IR 即时渲染的图片节点由 Lute 直接插入 DOM（不走 preview 钩子），
-    // 用 MutationObserver 监听并把本地相对路径转成 asset URL
+    // 用 MutationObserver 监听并把本地相对路径转成 asset URL；
+    // 同时顺带触发远程图片本地化扫描（不依赖 paste 事件——
+    // Vditor 可能在内部拦截/停止冒泡，导致容器上的 paste 监听不可靠）
     const observer = new MutationObserver(() => {
       if (containerRef.current) rewriteAssetDom(containerRef.current);
+      void scanAndLocalize();
     });
     observer.observe(containerRef.current, { childList: true, subtree: true });
+
+    // 兜底：仍监听 paste 事件（若 Vditor 未拦截则更快响应）
+    const onPaste = () => void handlePasteLocalize();
+    containerRef.current.addEventListener('paste', onPaste);
 
     const doUpload = async (vditor: Vditor, kind: 'image' | 'file') => {
       const uploader = uploadRef.current;
@@ -113,6 +175,9 @@ export function MarkdownEditor({ value, onChange, height = 480, placeholder = '�
 
     return () => {
       observer.disconnect();
+      if (containerRef.current) {
+        containerRef.current.removeEventListener('paste', onPaste);
+      }
       // StrictMode 开发模式下会立即卸载再挂载，此时 after 还没回调
       // Vditor.destroy 访问未初始化的 element 会崩溃，用 try-catch + ready 标志保护
       if (readyRef.current) {

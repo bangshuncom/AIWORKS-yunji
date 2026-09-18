@@ -3,13 +3,11 @@ import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Input,
   Button,
   Spinner,
   tokens,
 } from '@fluentui/react-components';
 import {
-  SearchRegular,
   DeleteRegular,
   CheckmarkCircleRegular,
   EditRegular,
@@ -186,7 +184,7 @@ export function ListPage() {
 
   return (
     <div className={s.pageContainer}>
-      {/* 顶部：当前筛选上下文（合集/标签）+ 搜索框 */}
+      {/* 顶部：当前筛选上下文（合集/标签） */}
       <div
         style={{
           display: 'flex',
@@ -225,13 +223,6 @@ export function ListPage() {
             />
           )}
         </div>
-        <Input
-          style={{ width: '280px' }}
-          placeholder="搜索标题"
-          defaultValue={search}
-          onChange={(_, d) => updateParam('q', d.value || null)}
-          contentBefore={<SearchRegular />}
-        />
       </div>
 
       {/* 列表 */}

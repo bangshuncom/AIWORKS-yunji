@@ -109,45 +109,132 @@ pub async fn admin_set_user_avatar(
     Ok(saved)
 }
 
+/// 管理员创建用户
+#[derive(Debug, Deserialize)]
+pub struct CreateUserPayload {
+    pub username: String,
+    pub nickname: String,
+    pub email: String,
+    pub password: String,
+    #[serde(default = "default_permission")]
+    pub permission_level: i64,
+}
+fn default_permission() -> i64 { 0 }
+
+#[tauri::command]
+pub async fn create_user(
+    state: State<'_, AppState>,
+    payload: CreateUserPayload,
+) -> CmdResult<i64> {
+    require_feature(&state.db, &state.auth, FEATURE_USER).await?;
+    let username = payload.username.trim().to_string();
+    let nickname = payload.nickname.trim().to_string();
+    let email = payload.email.trim().to_string();
+
+    if username.len() < 2 || username.len() > 32 {
+        return Err(AppError::BadRequest("用户名长度需为 2-32 个字符".into()));
+    }
+    if nickname.is_empty() || nickname.len() > 32 {
+        return Err(AppError::BadRequest("昵称为空或过长（最多 32 字符）".into()));
+    }
+    if !email.is_empty() {
+        if email.len() > 100 || !email.contains('@') {
+            return Err(AppError::BadRequest("邮箱格式不正确".into()));
+        }
+    }
+    if payload.password.len() < 6 || payload.password.len() > 128 {
+        return Err(AppError::BadRequest("密码长度需为 6-128 位".into()));
+    }
+    if !(0..=5).contains(&payload.permission_level) {
+        return Err(AppError::BadRequest("权限值必须为 0-5".into()));
+    }
+
+    if repository::users::username_exists(&state.db, &username).await? {
+        return Err(AppError::BadRequest("用户名已被占用".into()));
+    }
+    if !email.is_empty() && repository::users::email_exists(&state.db, &email).await? {
+        return Err(AppError::BadRequest("邮箱已被注册".into()));
+    }
+
+    let hash = hash_password(&payload.password)?;
+    let total = repository::users::count(&state.db).await?;
+    let is_admin = total == 0; // 首个用户自动管理员
+    let result = sqlx::query(
+        "INSERT INTO users (username, password_hash, nickname, email, is_admin, permission_level) \
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&username)
+    .bind(&hash)
+    .bind(&nickname)
+    .bind(&email)
+    .bind(if is_admin { 1 } else { 0 })
+    .bind(if is_admin { 5 } else { payload.permission_level })
+    .execute(&state.db)
+    .await?;
+    Ok(result.last_insert_rowid())
+}
+
 #[derive(Debug, Deserialize)]
 pub struct DeleteUsersPayload {
     pub ids: Vec<i64>,
+}
+
+/// 批量删除结果：跳过的为自己/权限不足等不可删账户
+#[derive(Debug, serde::Serialize)]
+pub struct DeleteUsersResult {
+    pub deleted: usize,
+    pub skipped: usize,
 }
 
 #[tauri::command]
 pub async fn delete_users(
     state: State<'_, AppState>,
     payload: DeleteUsersPayload,
-) -> CmdResult<()> {
+) -> CmdResult<DeleteUsersResult> {
     let operator = require_feature(&state.db, &state.auth, FEATURE_USER).await?;
-    let ids = &payload.ids;
-    if ids.is_empty() {
-        return Ok(());
-    }
-    // 不能删除自己
-    if ids.contains(&operator.id) {
-        return Err(AppError::BadRequest("不能删除当前登录的账户".into()));
+    let total = payload.ids.len();
+    if total == 0 {
+        return Ok(DeleteUsersResult { deleted: 0, skipped: 0 });
     }
 
-    // 不允许删除管理员账户
-    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!("SELECT COUNT(*) FROM users WHERE id IN ({placeholders}) AND is_admin = 1");
-    let mut q = sqlx::query_scalar::<_, i64>(&sql);
-    for &id in ids {
-        q = q.bind(id);
+    // 初始 admin：users 表中 id 最小的账户（启动引导创建，恒为管理员），拥有至高删除权
+    let first_admin: i64 = sqlx::query_scalar("SELECT MIN(id) FROM users")
+        .fetch_one(&state.db)
+        .await?;
+    let is_first_admin = operator.is_admin && operator.id == first_admin;
+
+    // 过滤：不删自己
+    let mut ids: Vec<i64> = payload.ids.into_iter().filter(|&id| id != operator.id).collect();
+
+    // 权限规则（所有人一致）：不能删除权限值 >= 自己的账户。
+    // 唯一例外：初始 admin 可删任何账户（含权限 5 与其他管理员），
+    // 前端对其删除权限 5 目标时会二次确认。
+    if !ids.is_empty() && !is_first_admin {
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT id FROM users WHERE id IN ({placeholders}) AND (is_admin = 1 OR permission_level >= {})",
+            operator.permission_level
+        );
+        let mut q = sqlx::query_scalar::<_, i64>(&sql);
+        for &id in &ids {
+            q = q.bind(id);
+        }
+        let blocked: std::collections::HashSet<i64> = q.fetch_all(&state.db).await?.into_iter().collect();
+        ids.retain(|id| !blocked.contains(id));
     }
-    let admin_count = q.fetch_one(&state.db).await?;
-    if admin_count > 0 {
-        return Err(AppError::BadRequest("不能删除管理员账户".into()));
+
+    let skipped = total - ids.len();
+    if ids.is_empty() {
+        return Ok(DeleteUsersResult { deleted: 0, skipped });
     }
 
     // 删除用户并清理头像文件
-    let avatars = repository::users::delete_many(&state.db, ids).await?;
+    let avatars = repository::users::delete_many(&state.db, &ids).await?;
     let storage = state.storage.get().await;
     for path in avatars {
         let _ = storage.delete(&path).await;
     }
-    Ok(())
+    Ok(DeleteUsersResult { deleted: ids.len(), skipped })
 }
 
 #[derive(Debug, Deserialize)]

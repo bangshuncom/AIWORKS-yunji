@@ -10,7 +10,6 @@ pub struct Resource {
     pub title: String,
     pub description: String,
     pub content: String,
-    pub status: String,
     /// 阅读权限：0=公开（无需登录），>0 需要读者权限值 >= read_level
     pub read_level: i64,
     pub access_password: String,
@@ -102,8 +101,6 @@ pub struct ListParams {
     #[serde(default)]
     pub search: Option<String>,
     #[serde(default)]
-    pub status: Option<String>,
-    #[serde(default)]
     pub tag_id: Option<i64>,
     #[serde(default)]
     pub collection_id: Option<i64>,
@@ -148,9 +145,6 @@ pub async fn list(pool: &SqlitePool, params: &ListParams, viewer_level: i64) -> 
     }
     // 阅读权限过滤：读者等级 >= 资源 read_level（管理员等级 5 可见全部）
     conditions.push(format!("read_level <= {}", viewer_level.clamp(0, 5)));
-    if let Some(status) = &params.status {
-        conditions.push(format!("status = '{}'", status.replace('\'', "''")));
-    }
     if let Some(search) = &params.search {
         let s = search.replace('\'', "''");
         conditions.push(format!("title LIKE '%{}%'", s));
@@ -189,13 +183,13 @@ pub async fn list(pool: &SqlitePool, params: &ListParams, viewer_level: i64) -> 
 
     // 查询列表
     let sql = format!(
-        "SELECT id, title, description, content, status, read_level, access_password, \
+        "SELECT id, title, description, content, read_level, access_password, \
          thumbnail_path, created_at, updated_at, deleted_at, user_id \
          FROM resources {} ORDER BY {} {} LIMIT ? OFFSET ?",
         where_clause, sort_col, direction
     );
 
-    let rows = sqlx::query_as::<_, (i64, String, String, String, String, i64, String, String, String, String, Option<String>, Option<i64>)>(&sql)
+    let rows = sqlx::query_as::<_, (i64, String, String, String, i64, String, String, String, String, Option<String>, Option<i64>)>(&sql)
         .bind(params.page_size)
         .bind(offset)
         .fetch_all(pool)
@@ -203,7 +197,7 @@ pub async fn list(pool: &SqlitePool, params: &ListParams, viewer_level: i64) -> 
 
     let mut items = Vec::new();
     for row in rows {
-        let (id, title, description, content, status, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id) = row;
+        let (id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id) = row;
         // 附加 tags
         let tags = get_tags_for_resource(pool, id).await?;
         let collections = get_collections_for_resource(pool, id).await?;
@@ -213,7 +207,7 @@ pub async fn list(pool: &SqlitePool, params: &ListParams, viewer_level: i64) -> 
         // 聚合附件类型（magnet/torrent → magnet_torrent，去重）
         let item_types = get_item_types_for_resource(pool, id).await?;
         items.push(Resource {
-            id, title, description, content, status, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
+            id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
             tags, collections, category, items: vec![], images, author, item_types,
         });
     }
@@ -224,9 +218,9 @@ pub async fn list(pool: &SqlitePool, params: &ListParams, viewer_level: i64) -> 
 pub async fn get(pool: &SqlitePool, rid: i64) -> Result<Resource, AppError> {
     let row = sqlx::query_as::<
         _,
-        (i64, String, String, String, String, i64, String, String, String, String, Option<String>, Option<i64>),
+        (i64, String, String, String, i64, String, String, String, String, Option<String>, Option<i64>),
     >(
-        "SELECT id, title, description, content, status, read_level, access_password, \
+        "SELECT id, title, description, content, read_level, access_password, \
          thumbnail_path, created_at, updated_at, deleted_at, user_id \
          FROM resources WHERE id = ? AND deleted_at IS NULL",
     )
@@ -235,7 +229,7 @@ pub async fn get(pool: &SqlitePool, rid: i64) -> Result<Resource, AppError> {
     .await?;
 
     let row = row.ok_or(AppError::NotFound)?;
-    let (id, title, description, content, status, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id) = row;
+    let (id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id) = row;
 
     let tags = get_tags_for_resource(pool, id).await?;
     let collections = get_collections_for_resource(pool, id).await?;
@@ -246,7 +240,7 @@ pub async fn get(pool: &SqlitePool, rid: i64) -> Result<Resource, AppError> {
     let item_types = get_item_types_for_resource(pool, id).await?;
 
     Ok(Resource {
-        id, title, description, content, status, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
+        id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
         tags, collections, category, items, images, author, item_types,
     })
 }
@@ -254,13 +248,12 @@ pub async fn get(pool: &SqlitePool, rid: i64) -> Result<Resource, AppError> {
 pub async fn create(pool: &SqlitePool, payload: &CreateResource, user_id: i64) -> Result<i64, AppError> {
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let result = sqlx::query(
-        "INSERT INTO resources (title, description, content, status, read_level, access_password, thumbnail_path, user_id, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO resources (title, description, content, read_level, access_password, thumbnail_path, user_id, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&payload.title)
     .bind(&payload.description)
     .bind(&payload.content)
-    .bind(payload.status.as_deref().unwrap_or("normal"))
     .bind(payload.read_level)
     .bind(&payload.access_password)
     .bind(&payload.thumbnail_path)
@@ -275,13 +268,12 @@ pub async fn create(pool: &SqlitePool, payload: &CreateResource, user_id: i64) -
 pub async fn update(pool: &SqlitePool, rid: i64, payload: &CreateResource) -> Result<(), AppError> {
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     sqlx::query(
-        "UPDATE resources SET title=?, description=?, content=?, status=?, read_level=?, access_password=?, thumbnail_path=?, updated_at=? \
+        "UPDATE resources SET title=?, description=?, content=?, read_level=?, access_password=?, thumbnail_path=?, updated_at=? \
          WHERE id=? AND deleted_at IS NULL",
     )
     .bind(&payload.title)
     .bind(&payload.description)
     .bind(&payload.content)
-    .bind(payload.status.as_deref().unwrap_or("normal"))
     .bind(payload.read_level)
     .bind(&payload.access_password)
     .bind(&payload.thumbnail_path)
@@ -321,9 +313,9 @@ pub async fn permanent_delete(pool: &SqlitePool, rid: i64) -> Result<(), AppErro
 pub async fn list_deleted(pool: &SqlitePool) -> Result<Vec<Resource>, AppError> {
     let rows = sqlx::query_as::<
         _,
-        (i64, String, String, String, String, i64, String, String, String, String, Option<String>, Option<i64>),
+        (i64, String, String, String, i64, String, String, String, String, Option<String>, Option<i64>),
     >(
-        "SELECT id, title, description, content, status, read_level, access_password, \
+        "SELECT id, title, description, content, read_level, access_password, \
          thumbnail_path, created_at, updated_at, deleted_at, user_id \
          FROM resources WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
     )
@@ -332,9 +324,9 @@ pub async fn list_deleted(pool: &SqlitePool) -> Result<Vec<Resource>, AppError> 
 
     let mut items = Vec::new();
     for row in rows {
-        let (id, title, description, content, status, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id) = row;
+        let (id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id) = row;
         items.push(Resource {
-            id, title, description, content, status, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
+            id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
             tags: vec![], collections: vec![], category: None, items: vec![], images: vec![], author: None, item_types: vec![],
         });
     }
@@ -355,9 +347,9 @@ pub async fn list_deleted_paged(
 
     let rows = sqlx::query_as::<
         _,
-        (i64, String, String, String, String, i64, String, String, String, String, Option<String>, Option<i64>),
+        (i64, String, String, String, i64, String, String, String, String, Option<String>, Option<i64>),
     >(
-        "SELECT id, title, description, content, status, read_level, access_password, \
+        "SELECT id, title, description, content, read_level, access_password, \
          thumbnail_path, created_at, updated_at, deleted_at, user_id \
          FROM resources WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC \
          LIMIT ?1 OFFSET ?2",
@@ -369,9 +361,9 @@ pub async fn list_deleted_paged(
 
     let mut items = Vec::new();
     for row in rows {
-        let (id, title, description, content, status, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id) = row;
+        let (id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id) = row;
         items.push(Resource {
-            id, title, description, content, status, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
+            id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
             tags: vec![], collections: vec![], category: None, items: vec![], images: vec![], author: None, item_types: vec![],
         });
     }
@@ -594,7 +586,6 @@ pub struct CreateResource {
     pub title: String,
     pub description: String,
     pub content: String,
-    pub status: Option<String>,
     #[serde(default)]
     pub read_level: i64,
     pub access_password: String,
@@ -607,17 +598,20 @@ pub struct CreateResource {
     pub category_id: Option<i64>,
     #[serde(default)]
     pub items: Vec<CreateItem>,
+    /// 管理员马甲功能：指定以其他用户身份创建/更新文章
+    #[serde(default)]
+    pub author_id: Option<i64>,
 }
 
 /// 批量更新资源：所有字段可选，只更新提供的字段
 #[derive(Debug, Clone, Deserialize)]
 pub struct BatchUpdate {
     pub ids: Vec<i64>,
-    pub status: Option<String>,
     pub read_level: Option<i64>,
     pub access_password: Option<String>,
     pub category_id: Option<Option<i64>>, // Some(None) = 清除分类
     pub add_collection_id: Option<i64>,   // 将这些资源加入某合集
+    pub user_id: Option<Option<i64>>,     // Some(Some) = 改作者；Some(None) = 清除作者
 }
 
 /// 批量更新资源字段（单条 SQL 更新所有行）
@@ -632,18 +626,6 @@ pub async fn batch_update(pool: &SqlitePool, payload: &BatchUpdate) -> Result<()
     let in_clause = placeholders.join(",");
 
     // 逐字段更新（每条 SQL 一次更新所有行）
-    if let Some(ref status) = payload.status {
-        let sql = format!(
-            "UPDATE resources SET status=?, updated_at=? WHERE id IN ({}) AND deleted_at IS NULL",
-            in_clause
-        );
-        let mut q = sqlx::query(&sql).bind(status).bind(&now);
-        for &id in &payload.ids {
-            q = q.bind(id);
-        }
-        q.execute(pool).await?;
-    }
-
     if let Some(read_level) = payload.read_level {
         let sql = format!(
             "UPDATE resources SET read_level=?, updated_at=? WHERE id IN ({}) AND deleted_at IS NULL",
@@ -684,6 +666,28 @@ pub async fn batch_update(pool: &SqlitePool, payload: &BatchUpdate) -> Result<()
                 .execute(pool)
                 .await?;
         }
+    }
+
+    // 改作者：目标用户需存在（NULL 表示清除作者）
+    if let Some(ref uid) = payload.user_id {
+        if let Some(new_uid) = uid {
+            let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE id = ?")
+                .bind(new_uid)
+                .fetch_one(pool)
+                .await?;
+            if exists == 0 {
+                return Err(AppError::BadRequest("目标作者不存在".into()));
+            }
+        }
+        let sql = format!(
+            "UPDATE resources SET user_id=?, updated_at=? WHERE id IN ({}) AND deleted_at IS NULL",
+            in_clause
+        );
+        let mut q = sqlx::query(&sql).bind(uid).bind(&now);
+        for &id in &payload.ids {
+            q = q.bind(id);
+        }
+        q.execute(pool).await?;
     }
 
     Ok(())

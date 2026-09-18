@@ -50,24 +50,83 @@ pub async fn get_collection(state: State<'_, AppState>, cid: i64) -> CmdResult<C
     Ok(repository::collections::get(&state.db, cid).await?)
 }
 
+/// 合集正文中的首个本地图片相对路径（如 content/xxx.jpg），用作封面回退
+fn first_image_in_content(content: &str) -> Option<String> {
+    for line in content.lines() {
+        for m in line.match_indices("![") {
+            let rest = &line[m.0 + 2..];
+            if let Some(close) = rest.find("](") {
+                let after = &rest[close + 2..];
+                if let Some(end) = after.find(')') {
+                    let url = after[..end].trim();
+                    if !url.is_empty()
+                        && !url.starts_with("http://")
+                        && !url.starts_with("https://")
+                        && !url.starts_with("data:")
+                        && !url.contains("__pending__")
+                    {
+                        return Some(url.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 合集封面回退：未设置封面时取正文首图（直接引用路径，不复制文件）
+fn fallback_cover(payload: &CreateCollection) -> String {
+    if !payload.thumbnail_path.trim().is_empty() {
+        return payload.thumbnail_path.clone();
+    }
+    first_image_in_content(&payload.content).unwrap_or_default()
+}
+
 #[tauri::command]
 pub async fn create_collection(
     state: State<'_, AppState>,
-    payload: CreateCollection,
+    mut payload: CreateCollection,
 ) -> CmdResult<i64> {
     // 新建合集属于作者本人，用「合集(自己)」权限
     let operator = require_feature(&state.db, &state.auth, FEATURE_COLLECTION_OWN).await?;
-    Ok(repository::collections::create(&state.db, &payload, operator.id).await?)
+    // 管理员马甲：指定以其他用户身份创建
+    let author_id = if let Some(aid) = payload.author_id {
+        let target = repository::users::find_by_id(&state.db, aid).await?
+            .ok_or(AppError::BadRequest("指定的作者不存在".into()))?;
+        if !operator.is_admin && target.id != operator.id {
+            return Err(AppError::Forbidden);
+        }
+        target.id
+    } else {
+        operator.id
+    };
+    payload.thumbnail_path = fallback_cover(&payload);
+    Ok(repository::collections::create(&state.db, &payload, author_id).await?)
 }
 
 #[tauri::command]
 pub async fn update_collection(
     state: State<'_, AppState>,
     cid: i64,
-    payload: CreateCollection,
+    mut payload: CreateCollection,
 ) -> CmdResult<()> {
     let col = repository::collections::get(&state.db, cid).await?;
-    let _user = require_collection_write(&state, col.user_id).await?;
+    let operator = require_collection_write(&state, col.user_id).await?;
+    // 管理员马甲：编辑时可改作者
+    if let Some(aid) = payload.author_id {
+        let target = repository::users::find_by_id(&state.db, aid).await?
+            .ok_or(AppError::BadRequest("指定的作者不存在".into()))?;
+        if !operator.is_admin && target.id != operator.id {
+            return Err(AppError::Forbidden);
+        }
+        sqlx::query("UPDATE collections SET user_id=? WHERE id=?")
+            .bind(target.id)
+            .bind(cid)
+            .execute(&state.db)
+            .await?;
+    }
+    // 封面回退：清空封面时取正文首图（引用，不复制）
+    payload.thumbnail_path = fallback_cover(&payload);
     repository::collections::update(&state.db, cid, &payload).await?;
     Ok(())
 }

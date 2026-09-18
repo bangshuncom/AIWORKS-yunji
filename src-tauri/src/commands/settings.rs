@@ -86,6 +86,30 @@ pub async fn update_settings(
             return Err(AppError::BadRequest("LOGO 模式非法".into()));
         }
     }
+    // 链接打开方式校验
+    if let Some(mode) = settings.get("link_open_mode") {
+        if !["default", "custom"].contains(&mode.as_str()) {
+            return Err(AppError::BadRequest("链接打开方式非法".into()));
+        }
+    }
+    if let Some(p) = settings.get("browser_path") {
+        let p = p.trim();
+        if !p.is_empty() && !Path::new(p).is_file() {
+            return Err(AppError::BadRequest("浏览器路径不存在".into()));
+        }
+    }
+    // 代理设置校验
+    if let Some(mode) = settings.get("proxy_mode") {
+        if !["system", "none", "custom"].contains(&mode.as_str()) {
+            return Err(AppError::BadRequest("代理模式非法".into()));
+        }
+    }
+    if let Some(url) = settings.get("proxy_url") {
+        let u = url.trim();
+        if !u.is_empty() && !u.contains("://") && !u.contains(':') {
+            return Err(AppError::BadRequest("代理地址格式不正确（如 127.0.0.1:7890 或 http://host:port）".into()));
+        }
+    }
     // 布尔开关归一化
     for key in ["close_to_tray"] {
         if let Some(v) = settings.get(key) {
@@ -100,6 +124,89 @@ pub async fn update_settings(
             .await
             .map_err(crate::error::AppError::Storage)?;
         state.reset_storage(new_storage).await;
+    }
+    // 代理设置变更：重建 HTTP 客户端
+    if settings.contains_key("proxy_mode") || settings.contains_key("proxy_url") {
+        crate::commands::collector::apply_proxy_settings(&state).await;
+    }
+    Ok(())
+}
+
+/// 获取代理状态：当前模式、生效代理地址（诊断用，仅管理员）
+#[tauri::command]
+pub async fn get_proxy_status(
+    state: State<'_, AppState>,
+) -> CmdResult<HashMap<String, String>> {
+    let _user = require_admin(&state.auth).await?;
+    let mut out = HashMap::new();
+    let mode = repository::settings::get(&state.db, "proxy_mode")
+        .await?
+        .unwrap_or_else(|| "system".into());
+    let custom = repository::settings::get(&state.db, "proxy_url")
+        .await?
+        .unwrap_or_default();
+    let effective = crate::commands::collector::current_effective_proxy(&state).await;
+    out.insert("mode".into(), mode);
+    out.insert("custom_url".into(), custom);
+    out.insert("effective".into(), effective.unwrap_or_else(|| "直连（无代理）".into()));
+    Ok(out)
+}
+
+/// 打开外部链接（http/https）：按设置用系统默认浏览器或指定浏览器打开。
+/// 所有用户可用（正文里的外链点击，不涉及敏感数据）。
+#[tauri::command]
+pub async fn open_external_url(state: State<'_, AppState>, url: String) -> CmdResult<()> {
+    let url = url.trim();
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(AppError::BadRequest("仅支持 http/https 链接".into()));
+    }
+    // 防命令注入：裸双引号会破坏 cmd start 的引号包裹
+    if url.contains('"') {
+        return Err(AppError::BadRequest("链接地址非法".into()));
+    }
+    let mode = repository::settings::get(&state.db, "link_open_mode")
+        .await?
+        .unwrap_or_else(|| "default".into());
+    let browser = repository::settings::get(&state.db, "browser_path")
+        .await?
+        .unwrap_or_default();
+    let custom = mode == "custom" && !browser.trim().is_empty();
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        if custom {
+            std::process::Command::new(browser.trim())
+                .arg(url)
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                .spawn()
+                .map_err(|e| AppError::BadRequest(format!("启动指定浏览器失败: {}", e)))?;
+        } else {
+            // URL 用引号包裹，避免 & 等字符被 cmd 当作命令分隔符
+            std::process::Command::new("cmd")
+                .raw_arg(format!("/C start \"\" \"{}\"", url))
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                .spawn()
+                .map_err(|e| AppError::BadRequest(format!("打开链接失败: {}", e)))?;
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if custom {
+            std::process::Command::new(browser.trim())
+                .arg(url)
+                .spawn()
+                .map_err(|e| AppError::BadRequest(format!("启动指定浏览器失败: {}", e)))?;
+        } else {
+            #[cfg(target_os = "macos")]
+            let opener = "open";
+            #[cfg(all(unix, not(target_os = "macos")))]
+            let opener = "xdg-open";
+            std::process::Command::new(opener)
+                .arg(url)
+                .spawn()
+                .map_err(|e| AppError::BadRequest(format!("打开链接失败: {}", e)))?;
+        }
     }
     Ok(())
 }

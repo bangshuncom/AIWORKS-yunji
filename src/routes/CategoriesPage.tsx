@@ -591,6 +591,8 @@ export function CategoriesPage() {
             拖动手柄可排序，拖到分类中部可变成其子分类
           </span>
         </h2>
+      </div>
+      <div>
         <Button
           icon={<AddRegular />}
           appearance="primary"

@@ -49,13 +49,16 @@ import {
   tagApi,
   collectionApi,
   categoryApi,
+  authorApi,
   assetUrl,
   collectorApi,
   registerPendingAsset,
   listPendingAssets,
   clearPendingAsset,
 } from '../lib/tauri';
-import type { CreateItem, Resource, Tag, Image, Collection, Category } from '../types/models';
+import type { CreateItem, Resource, Tag, Image, Collection, Category, AuthorInfo } from '../types/models';
+import { usePerms } from '../hooks/usePerms';
+import { useAuthStore } from '../stores/authStore';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { CategoryTreeSelect } from '../components/CategoryTreeSelect';
 import { CollectDialog } from '../components/CollectDialog';
@@ -63,7 +66,7 @@ import type { CollectApplyPayload } from '../components/CollectDialog';
 
 const useStyles = makeStyles({
   container: { display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '900px' },
-  toolbar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' },
+  toolbar: { display: 'flex', alignItems: 'center', gap: '8px' },
   field: { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' },
   row: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   itemBlock: {
@@ -211,10 +214,18 @@ export function EditPage() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
-  const [status, setStatus] = useState('normal');
   const [readLevel, setReadLevel] = useState(0);
   const [accessPassword, setAccessPassword] = useState('');
   const [thumbnailPath, setThumbnailPath] = useState('');
+  // 管理员马甲：可选其他用户身份发布
+  const isAdmin = usePerms().isAdmin;
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const [authorId, setAuthorId] = useState<number | null>(null);
+  const { data: authors } = useQuery<AuthorInfo[]>({
+    queryKey: ['authors'],
+    queryFn: authorApi.list,
+    enabled: isAdmin,
+  });
   // 选中但尚未上传的本地封面（保存时才上传）
   const [pendingThumbnail, setPendingThumbnail] = useState<string | null>(null);
   const [tagIds, setTagIds] = useState<number[]>([]);
@@ -263,10 +274,10 @@ export function EditPage() {
       setTitle(resource.title);
       setDescription(resource.description);
       setContent(resource.content);
-      setStatus(resource.status);
       setReadLevel(resource.read_level ?? 0);
       setAccessPassword(resource.access_password);
       setThumbnailPath(resource.thumbnail_path);
+      setAuthorId(resource.user_id ?? null);
       setTagIds(resource.tags?.map((t) => t.id) ?? []);
       setCollectionIds(resource.collections?.map((c) => c.id) ?? []);
       setCategoryId(resource.category?.id ?? null);
@@ -322,7 +333,6 @@ export function EditPage() {
       title: title.trim(),
       description: description.trim(),
       content: content.trim(),
-      status,
       read_level: readLevel,
       access_password: accessPassword,
       thumbnail_path: thumbnailPath,
@@ -330,6 +340,7 @@ export function EditPage() {
       collection_ids: collectionIds,
       category_id: categoryId,
       items: submitItems,
+      author_id: isAdmin && authorId != null && authorId !== currentUserId ? authorId : undefined,
     };
     const newId = await resourceApi.create(payload);
     // 切换到编辑模式但不刷新页面
@@ -650,7 +661,6 @@ export function EditPage() {
           title: title.trim(),
           description: description.trim(),
           content: finalContent.trim(),
-          status,
           read_level: readLevel,
           access_password: accessPassword,
           // 有本地待传封面时先留空，上传后由 setResourceThumbnail 写回
@@ -659,6 +669,7 @@ export function EditPage() {
           collection_ids: collectionIds,
           category_id: categoryId,
           items: submitItems,
+          author_id: isAdmin && authorId != null && authorId !== currentUserId ? authorId : undefined,
         });
         setCurrentRid(savedId);
       }
@@ -700,13 +711,34 @@ export function EditPage() {
         await imageApi.reorderResourceImages(savedId, orderedIds);
       }
 
-      // 7. 编辑已有文章（或新建时带封面）：更新正文等字段
-      if (isEdit || pendingThumbnail) {
+      // 封面回退：未设置封面时，取图集第一张（不复制文件，直接引用）；
+      // 图集也没有则取正文 Markdown 首图（正文图片已在步骤 2 上传为相对路径）
+      if (!finalThumbnail) {
+        const firstGallery = gallery.find((im) => {
+          const realId = idMap.get(String(im.id));
+          return realId != null || !im.localPath;
+        });
+        if (firstGallery) {
+          // 本地刚上传的图查映射结果；已有图直接用 file_path
+          const realId = idMap.get(String(firstGallery.id));
+          finalThumbnail = realId != null
+            ? uploaded.find((u) => u.realId === realId)!.filePath
+            : firstGallery.file_path;
+        } else {
+          const m = finalContent.match(/!\[[^\]]*\]\(([^)\s]+)\)/);
+          if (m && !/^https?:\/\//i.test(m[1]) && !m[1].startsWith('__pending__')) {
+            finalThumbnail = m[1];
+          }
+        }
+        if (finalThumbnail) setThumbnailPath(finalThumbnail);
+      }
+
+      // 7. 编辑已有文章，或新建时带封面/回退出封面：更新正文等字段
+      if (isEdit || pendingThumbnail || finalThumbnail) {
         await resourceApi.update(savedId, {
           title: title.trim(),
           description: description.trim(),
           content: finalContent.trim(),
-          status,
           read_level: readLevel,
           access_password: accessPassword,
           thumbnail_path: finalThumbnail,
@@ -714,6 +746,7 @@ export function EditPage() {
           collection_ids: collectionIds,
           category_id: categoryId,
           items: submitItems,
+          author_id: isAdmin && authorId != null && authorId !== currentUserId ? authorId : undefined,
         });
       }
       return savedId;
@@ -789,18 +822,6 @@ export function EditPage() {
         </div>
         <div className={styles.row}>
           <div className={styles.field}>
-            <Label>状态</Label>
-            <Dropdown
-              value={status === 'normal' ? '正常' : status === 'invalid' ? '失效' : '归档'}
-              selectedOptions={[status]}
-              onOptionSelect={(_, d) => { if (d.optionValue) setStatus(d.optionValue); }}
-            >
-              <Option value="normal" text="正常">正常</Option>
-              <Option value="invalid" text="失效">失效</Option>
-              <Option value="archived" text="归档">归档</Option>
-            </Dropdown>
-          </div>
-          <div className={styles.field}>
             <Label>阅读权限</Label>
             <Dropdown
               value={readLevel === 0 ? '0 - 公开（无需登录）' : `${readLevel} - 需权限 ${readLevel} 及以上`}
@@ -815,6 +836,31 @@ export function EditPage() {
               <Option value="5" text="5 - 需权限 5（默认仅管理员）">5 - 需权限 5（默认仅管理员）</Option>
             </Dropdown>
           </div>
+          {isAdmin && (
+            <div className={styles.field}>
+              <Label>发布身份（马甲）</Label>
+              <Dropdown
+                value={
+                  authorId == null ? '当前账号'
+                  : authors?.find((a) => a.id === authorId)
+                    ? `${authors.find((a) => a.id === authorId)!.nickname || authors.find((a) => a.id === authorId)!.username}`
+                    : `用户 #${authorId}`
+                }
+                selectedOptions={[String(authorId ?? 'me')]}
+                onOptionSelect={(_, d) => {
+                  const v = d.optionValue;
+                  setAuthorId(v === 'me' ? null : Number(v));
+                }}
+              >
+                <Option value="me" text="当前账号">当前账号</Option>
+                {authors?.map((a) => (
+                  <Option key={a.id} value={String(a.id)} text={a.nickname || a.username}>
+                    {a.nickname || a.username}
+                  </Option>
+                ))}
+              </Dropdown>
+            </div>
+          )}
         </div>
         <div className={styles.field}>
           <Label htmlFor="pwd">访问密码（留空则不限制）</Label>

@@ -1,6 +1,6 @@
 [package]
 name = "yunji-tauri"
-version = "26.9.16"
+version = "26.9.18"
 description = "云记 - 资源管理桌面应用"
 authors = ["you"]
 edition = "2021"

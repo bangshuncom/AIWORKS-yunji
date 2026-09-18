@@ -19,18 +19,31 @@ pub struct Collection {
     pub resource_count: i64,
     #[serde(default)]
     pub user_id: Option<i64>,
+    /// 列表展示用封面：自有封面为空时回退到首个收录文章的封面（不复制文件）
+    #[serde(default)]
+    pub cover_path: String,
 }
+
+/// 首个收录文章的封面子查询（按 sort_order 排序，未删除优先）
+const FIRST_COVER_SUB: &str = "COALESCE( \
+ (SELECT r.thumbnail_path FROM resource_collections rc \
+  JOIN resources r ON r.id = rc.resource_id AND r.deleted_at IS NULL \
+  WHERE rc.collection_id = c.id AND r.thumbnail_path != '' \
+  ORDER BY rc.sort_order ASC, r.created_at ASC LIMIT 1), '')";
 
 pub async fn list(pool: &SqlitePool) -> Result<Vec<Collection>, AppError> {
     let rows = sqlx::query_as::<
         _,
-        (i64, String, String, String, String, String, String, String, String, Option<String>, i64, Option<i64>),
+        (i64, String, String, String, String, String, String, String, String, Option<String>, i64, Option<i64>, String),
     >(
-        "SELECT c.id, c.title, c.description, c.visibility, c.access_password, c.thumbnail_path, \
-         c.content, c.created_at, c.updated_at, c.deleted_at, \
-         (SELECT COUNT(*) FROM resource_collections rc WHERE rc.collection_id = c.id) as resource_count, \
-         c.user_id \
-         FROM collections c WHERE c.deleted_at IS NULL ORDER BY c.created_at DESC",
+        &format!(
+            "SELECT c.id, c.title, c.description, c.visibility, c.access_password, c.thumbnail_path, \
+             c.content, c.created_at, c.updated_at, c.deleted_at, \
+             (SELECT COUNT(*) FROM resource_collections rc WHERE rc.collection_id = c.id) as resource_count, \
+             c.user_id, \
+             COALESCE(NULLIF(c.thumbnail_path, ''), {FIRST_COVER_SUB}) as cover_path \
+             FROM collections c WHERE c.deleted_at IS NULL ORDER BY c.created_at DESC",
+        ),
     )
     .fetch_all(pool)
     .await?;
@@ -38,10 +51,10 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Collection>, AppError> {
     Ok(rows
         .into_iter()
         .map(
-            |(id, title, description, visibility, access_password, thumbnail_path, content, created_at, updated_at, deleted_at, resource_count, user_id)| {
+            |(id, title, description, visibility, access_password, thumbnail_path, content, created_at, updated_at, deleted_at, resource_count, user_id, cover_path)| {
                 Collection {
                     id, title, description, visibility, access_password, thumbnail_path,
-                    content, created_at, updated_at, deleted_at, resource_count, user_id,
+                    content, created_at, updated_at, deleted_at, resource_count, user_id, cover_path,
                 }
             },
         )
@@ -72,11 +85,14 @@ pub async fn list_paged(
             .await?
     };
 
-    let base = "SELECT c.id, c.title, c.description, c.visibility, c.access_password, c.thumbnail_path, \
+    let base = &format!(
+        "SELECT c.id, c.title, c.description, c.visibility, c.access_password, c.thumbnail_path, \
          c.content, c.created_at, c.updated_at, c.deleted_at, \
          (SELECT COUNT(*) FROM resource_collections rc WHERE rc.collection_id = c.id) as resource_count, \
-         c.user_id \
-         FROM collections c WHERE c.deleted_at IS NULL";
+         c.user_id, \
+         COALESCE(NULLIF(c.thumbnail_path, ''), {FIRST_COVER_SUB}) as cover_path \
+         FROM collections c WHERE c.deleted_at IS NULL",
+    );
     let sql = if like.is_some() {
         format!("{base} AND c.title LIKE ?1 ORDER BY c.created_at DESC LIMIT ?2 OFFSET ?3")
     } else {
@@ -85,7 +101,7 @@ pub async fn list_paged(
 
     let mut query = sqlx::query_as::<
         _,
-        (i64, String, String, String, String, String, String, String, String, Option<String>, i64, Option<i64>),
+        (i64, String, String, String, String, String, String, String, String, Option<String>, i64, Option<i64>, String),
     >(&sql);
     if let Some(l) = &like {
         query = query.bind(l);
@@ -97,10 +113,10 @@ pub async fn list_paged(
         items: rows
             .into_iter()
             .map(
-                |(id, title, description, visibility, access_password, thumbnail_path, content, created_at, updated_at, deleted_at, resource_count, user_id)| {
+                |(id, title, description, visibility, access_password, thumbnail_path, content, created_at, updated_at, deleted_at, resource_count, user_id, cover_path)| {
                     Collection {
                         id, title, description, visibility, access_password, thumbnail_path,
-                        content, created_at, updated_at, deleted_at, resource_count, user_id,
+                        content, created_at, updated_at, deleted_at, resource_count, user_id, cover_path,
                     }
                 },
             )
@@ -112,24 +128,27 @@ pub async fn list_paged(
 pub async fn get(pool: &SqlitePool, cid: i64) -> Result<Collection, AppError> {
     let row = sqlx::query_as::<
         _,
-        (i64, String, String, String, String, String, String, String, String, Option<String>, i64, Option<i64>),
+        (i64, String, String, String, String, String, String, String, String, Option<String>, i64, Option<i64>, String),
     >(
-        "SELECT c.id, c.title, c.description, c.visibility, c.access_password, c.thumbnail_path, \
-         c.content, c.created_at, c.updated_at, c.deleted_at, \
-         (SELECT COUNT(*) FROM resource_collections rc WHERE rc.collection_id = c.id) as resource_count, \
-         c.user_id \
-         FROM collections c WHERE c.id = ? AND c.deleted_at IS NULL",
+        &format!(
+            "SELECT c.id, c.title, c.description, c.visibility, c.access_password, c.thumbnail_path, \
+             c.content, c.created_at, c.updated_at, c.deleted_at, \
+             (SELECT COUNT(*) FROM resource_collections rc WHERE rc.collection_id = c.id) as resource_count, \
+             c.user_id, \
+             COALESCE(NULLIF(c.thumbnail_path, ''), {FIRST_COVER_SUB}) as cover_path \
+             FROM collections c WHERE c.id = ? AND c.deleted_at IS NULL",
+        ),
     )
     .bind(cid)
     .fetch_optional(pool)
     .await?;
 
     let row = row.ok_or(AppError::NotFound)?;
-    let (id, title, description, visibility, access_password, thumbnail_path, content, created_at, updated_at, deleted_at, resource_count, user_id) = row;
+    let (id, title, description, visibility, access_password, thumbnail_path, content, created_at, updated_at, deleted_at, resource_count, user_id, cover_path) = row;
 
     Ok(Collection {
         id, title, description, visibility, access_password, thumbnail_path,
-        content, created_at, updated_at, deleted_at, resource_count, user_id,
+        content, created_at, updated_at, deleted_at, resource_count, user_id, cover_path,
     })
 }
 
@@ -142,6 +161,9 @@ pub struct CreateCollection {
     pub thumbnail_path: String,
     #[serde(default)]
     pub content: String,
+    /// 管理员马甲功能：指定以其他用户身份创建合集
+    #[serde(default)]
+    pub author_id: Option<i64>,
 }
 
 pub async fn create(pool: &SqlitePool, payload: &CreateCollection, user_id: i64) -> Result<i64, AppError> {

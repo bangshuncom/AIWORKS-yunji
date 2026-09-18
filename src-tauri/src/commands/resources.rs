@@ -82,13 +82,24 @@ pub async fn create_resource(
 ) -> CmdResult<i64> {
     // 新建文章属于作者本人，用「文章(自己)」权限
     let operator = require_feature(&state.db, &state.auth, FEATURE_ARTICLE_OWN).await?;
+    // 管理员马甲：指定以其他用户身份创建
+    let author_id = if let Some(aid) = payload.author_id {
+        let target = repository::users::find_by_id(&state.db, aid).await?
+            .ok_or(AppError::BadRequest("指定的作者不存在".into()))?;
+        if !operator.is_admin && target.id != operator.id {
+            return Err(AppError::Forbidden);
+        }
+        target.id
+    } else {
+        operator.id
+    };
     if payload.title.trim().is_empty() {
         return Err(AppError::BadRequest("标题不能为空".into()));
     }
     payload.title = payload.title.trim().to_string();
     // 上传了种子但没填磁力链接：保存时自动反推
     fill_magnets_from_torrents(&state, &mut payload.items).await;
-    let rid = repository::resources::create(&state.db, &payload, operator.id).await?;
+    let rid = repository::resources::create(&state.db, &payload, author_id).await?;
     // 同步附件项
     if !payload.items.is_empty() {
         repository::resources::sync_items(&state.db, rid, &payload.items).await?;
@@ -112,6 +123,20 @@ pub async fn update_resource(
 ) -> CmdResult<()> {
     let existing = repository::resources::get(&state.db, rid).await?;
     let _user = require_article_write(&state, existing.user_id).await?;
+    // 管理员马甲：编辑时可改作者
+    if let Some(aid) = payload.author_id {
+        let operator = crate::auth::require_login(&state.auth).await?;
+        let target = repository::users::find_by_id(&state.db, aid).await?
+            .ok_or(AppError::BadRequest("指定的作者不存在".into()))?;
+        if !operator.is_admin && target.id != operator.id {
+            return Err(AppError::Forbidden);
+        }
+        sqlx::query("UPDATE resources SET user_id=? WHERE id=? AND deleted_at IS NULL")
+            .bind(target.id)
+            .bind(rid)
+            .execute(&state.db)
+            .await?;
+    }
     if payload.title.trim().is_empty() {
         return Err(AppError::BadRequest("标题不能为空".into()));
     }

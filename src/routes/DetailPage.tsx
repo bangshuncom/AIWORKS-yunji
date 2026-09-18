@@ -1,5 +1,5 @@
 // 详情页：磁力种子分组 + 图集导航预览
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -27,9 +27,6 @@ import {
   ArrowDownloadRegular,
   DocumentRegular,
   CopyRegular,
-  ChevronLeftRegular,
-  ChevronRightRegular,
-  DismissRegular,
   FolderRegular,
   OpenRegular,
   WarningRegular,
@@ -39,13 +36,13 @@ import { formatTime, relativeTime, formatBytes } from '../lib/format';
 import { usePerms } from '../hooks/usePerms';
 import type { ResourceItem, Image, ParsedTorrentFile, FetchStatus } from '../types/models';
 import { MarkdownView } from '../components/MarkdownView';
+import { ImageLightbox } from '../components/ImageLightbox';
 
 const useStyles = makeStyles({
   container: { display: 'flex', flexDirection: 'column', gap: '24px' },
   toolbar: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: '8px',
   },
   header: {
@@ -156,35 +153,6 @@ const useStyles = makeStyles({
     cursor: 'pointer',
     transition: 'transform 0.15s',
     '&:hover': { transform: 'scale(1.02)' },
-  },
-  overlay: {
-    position: 'fixed',
-    inset: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.88)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  overlayImg: {
-    maxWidth: '90vw',
-    maxHeight: '85vh',
-    objectFit: 'contain',
-    userSelect: 'none',
-    borderRadius: '8px',
-  },
-  closeBtn: { position: 'absolute', top: '24px', right: '24px', zIndex: 1001 },
-  counter: {
-    position: 'absolute',
-    bottom: '24px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    color: '#fff',
-    fontSize: '14px',
-    zIndex: 1001,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: '4px 12px',
-    borderRadius: '12px',
   },
   filesBox: {
     marginTop: '4px',
@@ -319,26 +287,6 @@ export function DetailPage() {
       cancelled = true;
     };
   }, [ridNum, resource]);
-
-  // 图集预览导航
-  const closePreview = useCallback(() => setPreviewIndex(-1), []);
-  const showPrev = useCallback(() => {
-    setPreviewIndex((i) => (i <= 0 ? galleryImages.length - 1 : i - 1));
-  }, [galleryImages.length]);
-  const showNext = useCallback(() => {
-    setPreviewIndex((i) => (i >= galleryImages.length - 1 ? 0 : i + 1));
-  }, [galleryImages.length]);
-
-  useEffect(() => {
-    if (previewIndex < 0) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closePreview();
-      else if (e.key === 'ArrowLeft') showPrev();
-      else if (e.key === 'ArrowRight') showNext();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [previewIndex, closePreview, showPrev, showNext]);
 
   const copyMagnet = (text: string) => {
     navigator.clipboard?.writeText(text).catch(() => {});
@@ -496,7 +444,6 @@ export function DetailPage() {
           </div>
         )}
       </div>
-
       {/* 标题 + 缩略图（左右布局） */}
       <div className={styles.header}>
         {resource.thumbnail_path && (
@@ -802,41 +749,13 @@ export function DetailPage() {
         </div>
       ))}
 
-      {/* 图集预览遮罩 */}
-      {previewIndex >= 0 && galleryImages[previewIndex] && (
-        <div className={styles.overlay} onClick={closePreview}>
-          <Button
-            style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left: '24px', zIndex: 1001 }}
-            appearance="subtle"
-            size="large"
-            icon={<ChevronLeftRegular />}
-            onClick={(e) => { e.stopPropagation(); showPrev(); }}
-          />
-          <img
-            className={styles.overlayImg}
-            src={assetUrl(galleryImages[previewIndex].file_path)}
-            alt={`预览 ${previewIndex + 1}`}
-            onClick={(e) => e.stopPropagation()}
-          />
-          <Button
-            style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '24px', zIndex: 1001 }}
-            appearance="subtle"
-            size="large"
-            icon={<ChevronRightRegular />}
-            onClick={(e) => { e.stopPropagation(); showNext(); }}
-          />
-          <Button
-            className={styles.closeBtn}
-            appearance="subtle"
-            size="large"
-            icon={<DismissRegular />}
-            onClick={closePreview}
-          />
-          <div className={styles.counter}>
-            {previewIndex + 1} / {galleryImages.length}
-          </div>
-        </div>
-      )}
+      {/* 图集预览遮罩（通用组件，与正文图片放大共用） */}
+      <ImageLightbox
+        images={galleryImages.map((g) => assetUrl(g.file_path))}
+        index={previewIndex}
+        onIndexChange={setPreviewIndex}
+        onClose={() => setPreviewIndex(-1)}
+      />
 
       {/* 下载种子/文件 弹窗 */}
       <Dialog

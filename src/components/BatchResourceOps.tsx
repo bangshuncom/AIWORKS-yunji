@@ -20,10 +20,10 @@ import {
   ShieldRegular,
   KeyRegular,
   BoxRegular,
-  CheckmarkCircleRegular,
+  PeopleRegular,
 } from '@fluentui/react-icons';
-import { resourceApi, collectionApi, categoryApi } from '../lib/tauri';
-import type { Collection, Category } from '../types/models';
+import { resourceApi, collectionApi, categoryApi, authorApi } from '../lib/tauri';
+import type { Collection, Category, AuthorInfo } from '../types/models';
 import type { SelectionController } from './batch';
 import { CategoryTreeSelect } from './CategoryTreeSelect';
 
@@ -46,6 +46,10 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
   const { data: categoriesTree } = useQuery<Category[]>({
     queryKey: ['categories-tree'],
     queryFn: categoryApi.listTree,
+  });
+  const { data: authors } = useQuery<AuthorInfo[]>({
+    queryKey: ['authors'],
+    queryFn: authorApi.list,
   });
 
   const invalidate = () => {
@@ -77,26 +81,6 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
 
   return (
     <>
-      {/* 状态 */}
-      <Menu>
-        <MenuTrigger>
-          <Button {...btnProps} icon={<CheckmarkCircleRegular />}>状态</Button>
-        </MenuTrigger>
-        <MenuPopover>
-          <MenuList>
-            <MenuItem onClick={() => doBatchUpdate({ status: 'normal' }, `将 ${ids.length} 项设为正常？`)}>
-              正常
-            </MenuItem>
-            <MenuItem onClick={() => doBatchUpdate({ status: 'invalid' }, `将 ${ids.length} 项设为失效？`)}>
-              失效
-            </MenuItem>
-            <MenuItem onClick={() => doBatchUpdate({ status: 'archived' }, `将 ${ids.length} 项设为归档？`)}>
-              归档
-            </MenuItem>
-          </MenuList>
-        </MenuPopover>
-      </Menu>
-
       {/* 阅读权限 */}
       <Menu>
         <MenuTrigger>
@@ -176,6 +160,7 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
         emptyLabel="清除分类"
         showCount
         size="small"
+        style={{ minWidth: 0 }}
       />
 
       {/* 合集 */}
@@ -195,6 +180,36 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
             ))}
             {(!collections || collections.length === 0) && (
               <MenuItem disabled>暂无合集</MenuItem>
+            )}
+          </MenuList>
+        </MenuPopover>
+      </Menu>
+
+      {/* 修改作者（含清除作者） */}
+      <Menu>
+        <MenuTrigger>
+          <Button {...btnProps} icon={<PeopleRegular />}>作者</Button>
+        </MenuTrigger>
+        <MenuPopover style={{ minWidth: '220px', maxHeight: '360px' }}>
+          <MenuList>
+            <MenuItem
+              onClick={() => doBatchUpdate({ user_id: null }, `清除 ${ids.length} 项的作者（变为无作者）？`)}
+            >
+              清除作者（无作者）
+            </MenuItem>
+            {authors?.map((a) => (
+              <MenuItem
+                key={a.id}
+                onClick={() => doBatchUpdate(
+                  { user_id: a.id },
+                  `将 ${ids.length} 项作者改为「${a.nickname || a.username}」？`,
+                )}
+              >
+                {a.nickname || a.username} ({a.resource_count} 篇)
+              </MenuItem>
+            ))}
+            {(!authors || authors.length === 0) && (
+              <MenuItem disabled>暂无作者</MenuItem>
             )}
           </MenuList>
         </MenuPopover>

@@ -24,15 +24,23 @@ const CHUNK_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// 断点续传最大轮次
 const MAX_RESUME_ROUNDS: u32 = 8;
 
-static HTTP: Lazy<reqwest::Client> = Lazy::new(|| {
-    let proxy_url = detect_proxy();
+/// HTTP 客户端：按代理设置构建，设置变更时重建。
+/// proxy_mode = "system"（默认，跟随系统/环境变量） | "none"（直连） | "custom"（自定义地址）
+static HTTP: Lazy<tokio::sync::RwLock<reqwest::Client>> = Lazy::new(|| {
+    tokio::sync::RwLock::new(build_client(
+        detect_proxy(),
+    ))
+});
+
+/// 本次进程实际使用的代理地址（供进度事件展示/诊断）
+static DETECTED_PROXY: once_cell::sync::OnceCell<Option<String>> = once_cell::sync::OnceCell::new();
+
+fn build_client(proxy_url: Option<String>) -> reqwest::Client {
     let mut builder = reqwest::Client::builder()
         // 只限制连接阶段；慢网络下图床可能数百秒持续低速传数据，
         // body 总时长由各调用方按空闲超时自行控制
         .connect_timeout(Duration::from_secs(20))
         .redirect(reqwest::redirect::Policy::limited(5));
-    // 关键：浏览器/WebView2 自动走 Windows 系统代理（Clash/V2Ray 等），
-    // reqwest 默认只认环境变量，会直连被限速的境外线路
     if let Some(ref p) = proxy_url {
         if let Ok(proxy) = reqwest::Proxy::all(p) {
             builder = builder.proxy(proxy);
@@ -40,10 +48,42 @@ static HTTP: Lazy<reqwest::Client> = Lazy::new(|| {
     }
     let _ = DETECTED_PROXY.set(proxy_url);
     builder.build().expect("reqwest client")
-});
+}
 
-/// 本次进程实际使用的代理地址（供进度事件展示/诊断）
-static DETECTED_PROXY: once_cell::sync::OnceCell<Option<String>> = once_cell::sync::OnceCell::new();
+async fn http_client() -> reqwest::Client {
+    HTTP.read().await.clone()
+}
+
+/// 按代理模式解析出代理地址（custom 模式下读数据库设置）
+async fn resolve_proxy_from_state(state: &State<'_, AppState>) -> Option<String> {
+    let mode = repository::settings::get(&state.db, "proxy_mode")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "system".into());
+    match mode.as_str() {
+        "none" => None,
+        "custom" => repository::settings::get(&state.db, "proxy_url")
+            .await
+            .ok()
+            .flatten()
+            .filter(|u| !u.trim().is_empty())
+            .map(|u| if u.contains("://") { u } else { format!("http://{u}") }),
+        _ => detect_proxy(),
+    }
+}
+
+/// 应用代理设置（设置变更后调用）：重建 HTTP 客户端
+pub async fn apply_proxy_settings(state: &State<'_, AppState>) {
+    let proxy = resolve_proxy_from_state(state).await;
+    let mut client = HTTP.write().await;
+    *client = build_client(proxy);
+}
+
+/// 当前设置下实际生效的代理地址（诊断展示用）
+pub async fn current_effective_proxy(state: &State<'_, AppState>) -> Option<String> {
+    resolve_proxy_from_state(state).await
+}
 
 /// 当前生效的代理（探测前返回 None）
 fn active_proxy() -> Option<String> {
@@ -285,7 +325,10 @@ pub async fn fetch_webpage(url: String) -> CmdResult<WebPage> {
 
     let resp = tokio::time::timeout(
         Duration::from_secs(90),
-        HTTP.get(parsed.clone()).headers(headers).send(),
+        async {
+            let client = http_client().await;
+            client.get(parsed.clone()).headers(headers).send().await
+        },
     )
     .await
     .map_err(|_| AppError::BadRequest("抓取超时（90 秒）".into()))?
@@ -401,7 +444,8 @@ async fn fetch_image_bytes(
             }
         }
 
-        let resp = HTTP
+        let client = http_client().await;
+        let resp = client
             .get(url)
             .headers(headers)
             .send()
@@ -609,6 +653,29 @@ pub async fn collector_set_thumbnail(
     if !old_path.is_empty() {
         let _ = storage.delete(&old_path).await;
     }
+    Ok(saved)
+}
+
+/// 编辑器粘贴图片本地化：下载远程图片 URL，存入 content 目录，
+/// 返回存储相对路径（前端用它替换 markdown 中的远程链接）
+#[tauri::command]
+pub async fn download_remote_image(
+    state: State<'_, AppState>,
+    url: String,
+    referer: String,
+) -> CmdResult<String> {
+    require_feature(&state.db, &state.auth, FEATURE_ARTICLE_OWN).await?;
+    let storage = state.storage.get().await;
+
+    let mut noop_progress = |_: u64, _: Option<u64>, _: u32| {};
+    let (bytes, ext, _, _) = download_image_bytes(&url, &referer, &mut noop_progress)
+        .await
+        .map_err(AppError::BadRequest)?;
+    let filename = filename_from_url(&url, &ext);
+    let saved = storage
+        .save(bytes, &filename, "content")
+        .await
+        .map_err(AppError::Storage)?;
     Ok(saved)
 }
 

@@ -49,7 +49,10 @@ export const userApi = {
   list: () => invoke<AdminUser[]>('list_users'),
   listPage: (page: number, pageSize: number, search?: string) =>
     invoke<Paged<AdminUser>>('list_users_page', { page, pageSize, search: search || null }),
-  deleteMany: (ids: number[]) => invoke<void>('delete_users', { payload: { ids } }),
+  create: (payload: { username: string; nickname: string; email: string; password: string; permission_level?: number }) =>
+    invoke<number>('create_user', { payload }),
+  deleteMany: (ids: number[]) =>
+    invoke<{ deleted: number; skipped: number }>('delete_users', { payload: { ids } }),
   resetPassword: (userId: number, newPassword: string) =>
     invoke<void>('reset_user_password', { payload: { user_id: userId, new_password: newPassword } }),
   update: (payload: import('../types/models').AdminUpdateUser) =>
@@ -89,11 +92,11 @@ export const resourceApi = {
     invoke<string>('upload_resource_file', { filePath, subdir }),
   batchUpdate: (payload: {
     ids: number[];
-    status?: string;
     read_level?: number;
     access_password?: string;
     category_id?: number | null;
     add_collection_id?: number;
+    user_id?: number | null;
   }) => invoke<void>('batch_update_resources', { payload }),
 };
 
@@ -167,6 +170,11 @@ export const settingsApi = {
   uploadLogo: (filePath: string, kind: 'image' | 'icon') =>
     invoke<string>('upload_logo', { filePath, kind }),
   clearLogo: (kind: 'image' | 'icon') => invoke<void>('clear_logo', { kind }),
+  /** 代理状态：mode/system/none/custom + effective 生效地址 */
+  getProxyStatus: () =>
+    invoke<{ mode: string; custom_url: string; effective: string }>('get_proxy_status'),
+  /** 按设置用系统默认/指定浏览器打开外部链接 */
+  openExternalUrl: (url: string) => invoke<void>('open_external_url', { url }),
 };
 
 // --- Torrent / BT 种子文件列表 ---
@@ -230,6 +238,9 @@ export const collectorApi = {
     invoke<string>('collector_set_thumbnail', { rid, url, referer }),
   addImages: (rid: number, urls: string[], referer: string) =>
     invoke<CollectImagesResult>('collector_add_images', { rid, urls, referer }),
+  /** 编辑器粘贴图片本地化：下载远程图片存入 content 目录，返回相对路径 */
+  downloadImage: (url: string, referer: string) =>
+    invoke<string>('download_remote_image', { url, referer }),
 };
 
 // --- 资源 URL 解析（asset 协议）---
