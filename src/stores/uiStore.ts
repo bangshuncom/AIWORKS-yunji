@@ -25,7 +25,9 @@ function load(): Partial<Pick<UIStore, 'theme' | 'viewMode'>> {
 function save(state: Partial<Pick<UIStore, 'theme' | 'viewMode'>>) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 const persisted = load();

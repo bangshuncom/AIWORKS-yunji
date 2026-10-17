@@ -29,12 +29,12 @@
 
 ## 技术栈
 
-| 层 | 技术 |
-|----|------|
-| 前端 | React 19 + TypeScript + Fluent UI v9 + react-router + @tanstack/react-query + zustand + Vditor |
-| 后端 | Rust + Tauri 2 + sqlx + SQLite |
-| 构建 | Vite |
-| 下载工具 | aria2c（磁力链接下载） |
+| 层       | 技术                                                                                           |
+| -------- | ---------------------------------------------------------------------------------------------- |
+| 前端     | React 19 + TypeScript + Fluent UI v9 + react-router + @tanstack/react-query + zustand + Vditor |
+| 后端     | Rust + Tauri 2 + sqlx + SQLite                                                                 |
+| 构建     | Vite                                                                                           |
+| 下载工具 | aria2c（磁力链接下载）                                                                         |
 
 ## 开发
 

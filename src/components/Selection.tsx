@@ -1,5 +1,6 @@
 // 统一批量选择：useSelection hook + CardCheckbox（卡片勾选）+ BatchBar（浮动操作栏）
 import { useCallback, useMemo, useState } from 'react';
+import { confirmDanger } from '../lib/dialog';
 import type { ReactNode } from 'react';
 import { Button, Badge, Checkbox, makeStyles, tokens } from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
@@ -57,18 +58,14 @@ export async function runBatchAction(
 ) {
   const ids = Array.from(selection.selected);
   if (ids.length === 0) return;
-  if (!confirm(confirmFn(ids.length))) return;
+  if (!(await confirmDanger(confirmFn(ids.length)))) return;
   await runConcurrent(ids, action, concurrency);
   onDone?.();
   selection.clear();
 }
 
 /** 并发执行批量任务，限制最大并发数 */
-export async function runConcurrent<T>(
-  items: T[],
-  fn: (item: T) => Promise<void>,
-  concurrency = 8,
-): Promise<void> {
+export async function runConcurrent<T>(items: T[], fn: (item: T) => Promise<void>, concurrency = 8): Promise<void> {
   let idx = 0;
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
     while (idx < items.length) {
@@ -99,13 +96,7 @@ const useCheckboxStyles = makeStyles({
 });
 
 /** 卡片右上角的勾选框：未选中时 hover 卡片才显示，选中后常驻 */
-export function CardCheckbox({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
+export function CardCheckbox({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
   const styles = useCheckboxStyles();
   return (
     <div
@@ -113,10 +104,7 @@ export function CardCheckbox({
       data-batch-checkbox
       onClick={(e) => e.stopPropagation()}
     >
-      <Checkbox
-        checked={checked}
-        onChange={(_, d) => onChange(d.checked === true)}
-      />
+      <Checkbox checked={checked} onChange={(_, d) => onChange(d.checked === true)} />
     </div>
   );
 }
@@ -191,7 +179,9 @@ export function BatchBar({
       <Button appearance="outline" size="small" onClick={onInvert} disabled={busy}>
         反选
       </Button>
-      <Badge appearance="filled" color="brand">已选 {selectedCount}</Badge>
+      <Badge appearance="filled" color="brand">
+        已选 {selectedCount}
+      </Badge>
       <span className={styles.actions}>{children}</span>
       <Button
         className={styles.cancelBtn}

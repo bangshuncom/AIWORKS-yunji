@@ -16,15 +16,12 @@ import {
   Input,
   Spinner,
 } from '@fluentui/react-components';
-import {
-  ShieldRegular,
-  KeyRegular,
-  BoxRegular,
-  PeopleRegular,
-} from '@fluentui/react-icons';
+import { ShieldRegular, KeyRegular, BoxRegular, PeopleRegular } from '@fluentui/react-icons';
 import { resourceApi, collectionApi, categoryApi, authorApi } from '../lib/tauri';
+import { confirmDanger } from '../lib/dialog';
+import { invalidateArticleData } from '../lib/invalidate';
 import type { Collection, Category, AuthorInfo } from '../types/models';
-import type { SelectionController } from './batch';
+import type { SelectionController } from './Selection';
 import { CategoryTreeSelect } from './CategoryTreeSelect';
 
 interface BatchResourceOpsProps {
@@ -53,21 +50,17 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
   });
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['resources'] });
-    queryClient.invalidateQueries({ queryKey: ['collections'] });
+    // 批量改分类/合集/作者/阅读权限都会影响各处的计数与列表，统一失效
+    invalidateArticleData(queryClient);
   };
 
   const batchUpdateMut = useMutation({
-    mutationFn: (payload: Parameters<typeof resourceApi.batchUpdate>[0]) =>
-      resourceApi.batchUpdate(payload),
+    mutationFn: (payload: Parameters<typeof resourceApi.batchUpdate>[0]) => resourceApi.batchUpdate(payload),
     onSuccess: invalidate,
   });
 
-  const doBatchUpdate = async (
-    payload: Omit<Parameters<typeof resourceApi.batchUpdate>[0], 'ids'>,
-    msg: string,
-  ) => {
-    if (!confirm(msg)) return;
+  const doBatchUpdate = async (payload: Omit<Parameters<typeof resourceApi.batchUpdate>[0], 'ids'>, msg: string) => {
+    if (!(await confirmDanger(msg))) return;
     setBusy(true);
     try {
       await batchUpdateMut.mutateAsync({ ...payload, ids });
@@ -84,7 +77,9 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
       {/* 阅读权限 */}
       <Menu>
         <MenuTrigger>
-          <Button {...btnProps} icon={<ShieldRegular />}>阅读权限</Button>
+          <Button {...btnProps} icon={<ShieldRegular />}>
+            阅读权限
+          </Button>
         </MenuTrigger>
         <MenuPopover>
           <MenuList>
@@ -94,7 +89,9 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
             {[1, 2, 3, 4, 5].map((n) => (
               <MenuItem
                 key={n}
-                onClick={() => doBatchUpdate({ read_level: n }, `将 ${ids.length} 项阅读权限设为 ${n}（需权限 ${n} 及以上）？`)}
+                onClick={() =>
+                  doBatchUpdate({ read_level: n }, `将 ${ids.length} 项阅读权限设为 ${n}（需权限 ${n} 及以上）？`)
+                }
               >
                 {n} - 需权限 {n} 及以上
               </MenuItem>
@@ -128,7 +125,9 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
               />
             </DialogContent>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px' }}>
-              <Button appearance="subtle" onClick={() => setPwdOpen(false)}>取消</Button>
+              <Button appearance="subtle" onClick={() => setPwdOpen(false)}>
+                取消
+              </Button>
               <Button
                 appearance="primary"
                 onClick={async () => {
@@ -166,7 +165,9 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
       {/* 合集 */}
       <Menu>
         <MenuTrigger>
-          <Button {...btnProps} icon={<BoxRegular />}>合集</Button>
+          <Button {...btnProps} icon={<BoxRegular />}>
+            合集
+          </Button>
         </MenuTrigger>
         <MenuPopover style={{ minWidth: '220px', maxHeight: '360px' }}>
           <MenuList>
@@ -178,9 +179,7 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
                 {c.title} ({c.resource_count ?? 0})
               </MenuItem>
             ))}
-            {(!collections || collections.length === 0) && (
-              <MenuItem disabled>暂无合集</MenuItem>
-            )}
+            {(!collections || collections.length === 0) && <MenuItem disabled>暂无合集</MenuItem>}
           </MenuList>
         </MenuPopover>
       </Menu>
@@ -188,29 +187,26 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
       {/* 修改作者（含清除作者） */}
       <Menu>
         <MenuTrigger>
-          <Button {...btnProps} icon={<PeopleRegular />}>作者</Button>
+          <Button {...btnProps} icon={<PeopleRegular />}>
+            作者
+          </Button>
         </MenuTrigger>
         <MenuPopover style={{ minWidth: '220px', maxHeight: '360px' }}>
           <MenuList>
-            <MenuItem
-              onClick={() => doBatchUpdate({ user_id: null }, `清除 ${ids.length} 项的作者（变为无作者）？`)}
-            >
+            <MenuItem onClick={() => doBatchUpdate({ user_id: null }, `清除 ${ids.length} 项的作者（变为无作者）？`)}>
               清除作者（无作者）
             </MenuItem>
             {authors?.map((a) => (
               <MenuItem
                 key={a.id}
-                onClick={() => doBatchUpdate(
-                  { user_id: a.id },
-                  `将 ${ids.length} 项作者改为「${a.nickname || a.username}」？`,
-                )}
+                onClick={() =>
+                  doBatchUpdate({ user_id: a.id }, `将 ${ids.length} 项作者改为「${a.nickname || a.username}」？`)
+                }
               >
                 {a.nickname || a.username} ({a.resource_count} 篇)
               </MenuItem>
             ))}
-            {(!authors || authors.length === 0) && (
-              <MenuItem disabled>暂无作者</MenuItem>
-            )}
+            {(!authors || authors.length === 0) && <MenuItem disabled>暂无作者</MenuItem>}
           </MenuList>
         </MenuPopover>
       </Menu>

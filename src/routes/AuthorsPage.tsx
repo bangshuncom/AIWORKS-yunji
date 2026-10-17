@@ -15,6 +15,7 @@ import {
 } from '@fluentui/react-components';
 import { PeopleRegular, EditRegular, DeleteRegular } from '@fluentui/react-icons';
 import { authorApi, userApi, assetUrl } from '../lib/tauri';
+import { confirmDanger } from '../lib/dialog';
 import { usePerms } from '../hooks/usePerms';
 import { CardContextMenu } from '../components/CardContextMenu';
 import { UserEditDialog } from '../components/UserEditDialog';
@@ -113,7 +114,7 @@ export function AuthorsPage() {
   const handleDelete = async (a: AuthorInfo) => {
     const name = a.nickname || a.username;
     // 第一层确认（先弹，不依赖异步请求）
-    if (!confirm(`确认删除「${name}」？其文章将变为无作者状态，此操作不可恢复！`)) return;
+    if (!(await confirmDanger(`确认删除「${name}」？其文章将变为无作者状态，此操作不可恢复！`))) return;
     try {
       // 初始 admin 删除权限 5 目标：二次确认；查询失败不阻断，后端会做最终过滤
       const all = await userApi.list();
@@ -121,7 +122,7 @@ export function AuthorsPage() {
       if (full && (full.is_admin || full.permission_level >= 5)) {
         const adminIds = all.filter((u) => u.is_admin).map((u) => u.id);
         if (adminIds.length > 0 && currentUserId === Math.min(...adminIds)) {
-          if (!confirm(`「${name}」是权限 5 的账户，确认删除？此操作不可恢复！`)) return;
+          if (!(await confirmDanger(`「${name}」是权限 5 的账户，确认删除？此操作不可恢复！`))) return;
         }
       }
     } catch {
@@ -160,19 +161,23 @@ export function AuthorsPage() {
               return (
                 <CardContextMenu
                   key={a.id}
-                  items={canUser && a.id !== currentUserId ? [
-                    {
-                      icon: <EditRegular />,
-                      label: '编辑',
-                      onClick: () => openEdit(a),
-                    },
-                    {
-                      icon: <DeleteRegular />,
-                      label: '删除',
-                      danger: true,
-                      onClick: () => handleDelete(a),
-                    },
-                  ] : []}
+                  items={
+                    canUser && a.id !== currentUserId
+                      ? [
+                          {
+                            icon: <EditRegular />,
+                            label: '编辑',
+                            onClick: () => openEdit(a),
+                          },
+                          {
+                            icon: <DeleteRegular />,
+                            label: '删除',
+                            danger: true,
+                            onClick: () => handleDelete(a),
+                          },
+                        ]
+                      : []
+                  }
                 >
                   <div
                     className={styles.authorCard}
@@ -189,7 +194,9 @@ export function AuthorsPage() {
                         <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {name}
                         </strong>
-                        <Badge appearance="tint" color="brand">{a.resource_count} 篇</Badge>
+                        <Badge appearance="tint" color="brand">
+                          {a.resource_count} 篇
+                        </Badge>
                       </div>
                       {a.bio && <div className={styles.bio}>{a.bio}</div>}
                     </div>

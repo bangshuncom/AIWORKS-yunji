@@ -26,7 +26,13 @@ const ICON_IMAGE =
 const ICON_ATTACH =
   '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>';
 
-export function MarkdownEditor({ value, onChange, height = 480, placeholder = '在此输入 Markdown 内容...', upload }: MarkdownEditorProps) {
+export function MarkdownEditor({
+  value,
+  onChange,
+  height = 480,
+  placeholder = '在此输入 Markdown 内容...',
+  upload,
+}: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const vditorRef = useRef<Vditor | null>(null);
   const readyRef = useRef(false);
@@ -87,27 +93,32 @@ export function MarkdownEditor({ value, onChange, height = 480, placeholder = '�
   const handlePasteLocalize = () => {
     // Vditor 解析大段粘贴内容需要时间：多轮延迟扫描，直到发现并处理远程图片
     for (const delay of [100, 400, 1000, 2000]) {
-      setTimeout(() => { void scanAndLocalize(); }, delay);
+      setTimeout(() => {
+        void scanAndLocalize();
+      }, delay);
     }
   };
 
   // 初始化 Vditor 实例（仅一次）
   useEffect(() => {
-    if (!containerRef.current) return;
+    // 固化成本地变量：cleanup 运行时 React 可能已经把 ref 置空，
+    // 那时再读 containerRef.current 就解绑不掉 paste 监听了
+    const el = containerRef.current;
+    if (!el) return;
 
     // IR 即时渲染的图片节点由 Lute 直接插入 DOM（不走 preview 钩子），
     // 用 MutationObserver 监听并把本地相对路径转成 asset URL；
     // 同时顺带触发远程图片本地化扫描（不依赖 paste 事件——
     // Vditor 可能在内部拦截/停止冒泡，导致容器上的 paste 监听不可靠）
     const observer = new MutationObserver(() => {
-      if (containerRef.current) rewriteAssetDom(containerRef.current);
+      rewriteAssetDom(el);
       void scanAndLocalize();
     });
-    observer.observe(containerRef.current, { childList: true, subtree: true });
+    observer.observe(el, { childList: true, subtree: true });
 
     // 兜底：仍监听 paste 事件（若 Vditor 未拦截则更快响应）
     const onPaste = () => void handlePasteLocalize();
-    containerRef.current.addEventListener('paste', onPaste);
+    el.addEventListener('paste', onPaste);
 
     const doUpload = async (vditor: Vditor, kind: 'image' | 'file') => {
       const uploader = uploadRef.current;
@@ -116,10 +127,7 @@ export function MarkdownEditor({ value, onChange, height = 480, placeholder = '�
       try {
         const asset = await uploader(kind);
         if (!asset) return;
-        const snippet =
-          kind === 'image'
-            ? `\n![${asset.name}](${asset.path})\n`
-            : `[${asset.name}](${asset.path})`;
+        const snippet = kind === 'image' ? `\n![${asset.name}](${asset.path})\n` : `[${asset.name}](${asset.path})`;
         vditor.insertValue(snippet);
       } catch (e) {
         vditor.tip(e instanceof Error ? e.message : '上传失败');
@@ -128,7 +136,7 @@ export function MarkdownEditor({ value, onChange, height = 480, placeholder = '�
       }
     };
 
-    const vditor = new Vditor(containerRef.current, {
+    const vditor = new Vditor(el, {
       height,
       mode: 'ir',
       placeholder,
@@ -136,9 +144,25 @@ export function MarkdownEditor({ value, onChange, height = 480, placeholder = '�
       cdn: '/vditor',
       cache: { enable: false },
       toolbar: [
-        'emoji', 'headings', 'bold', 'italic', 'strike', 'link',
-        '|', 'list', 'ordered-list', 'check', 'outdent', 'indent',
-        '|', 'quote', 'line', 'code', 'inline-code', 'insert-before', 'insert-after',
+        'emoji',
+        'headings',
+        'bold',
+        'italic',
+        'strike',
+        'link',
+        '|',
+        'list',
+        'ordered-list',
+        'check',
+        'outdent',
+        'indent',
+        '|',
+        'quote',
+        'line',
+        'code',
+        'inline-code',
+        'insert-before',
+        'insert-after',
         '|',
         {
           name: 'upload-image',
@@ -153,8 +177,16 @@ export function MarkdownEditor({ value, onChange, height = 480, placeholder = '�
           click: () => void doUpload(vditor, 'file'),
         },
         'table',
-        '|', 'undo', 'redo',
-        '|', 'fullscreen', 'edit-mode', 'both', 'preview', 'info', 'help',
+        '|',
+        'undo',
+        'redo',
+        '|',
+        'fullscreen',
+        'edit-mode',
+        'both',
+        'preview',
+        'info',
+        'help',
       ],
       preview: {
         hljs: { style: 'github' },
@@ -175,13 +207,15 @@ export function MarkdownEditor({ value, onChange, height = 480, placeholder = '�
 
     return () => {
       observer.disconnect();
-      if (containerRef.current) {
-        containerRef.current.removeEventListener('paste', onPaste);
-      }
+      el.removeEventListener('paste', onPaste);
       // StrictMode 开发模式下会立即卸载再挂载，此时 after 还没回调
       // Vditor.destroy 访问未初始化的 element 会崩溃，用 try-catch + ready 标志保护
       if (readyRef.current) {
-        try { vditor.destroy(); } catch { /* noop */ }
+        try {
+          vditor.destroy();
+        } catch {
+          /* noop */
+        }
         readyRef.current = false;
       }
       vditorRef.current = null;

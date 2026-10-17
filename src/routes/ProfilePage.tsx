@@ -155,17 +155,9 @@ export function ProfilePage() {
           <PersonRegular /> 基本信息
         </div>
         <div className={styles.avatarRow}>
-          <Avatar
-            size={72}
-            name={user.nickname || user.username}
-            image={avatarSrc ? { src: avatarSrc } : undefined}
-          />
+          <Avatar size={72} name={user.nickname || user.username} image={avatarSrc ? { src: avatarSrc } : undefined} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <Button
-              appearance="outline"
-              icon={<CameraRegular />}
-              onClick={handleSelectAvatar}
-            >
+            <Button appearance="outline" icon={<CameraRegular />} onClick={handleSelectAvatar}>
               更换头像
             </Button>
             <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
@@ -215,12 +207,7 @@ export function ProfilePage() {
         </div>
         <div className={styles.field}>
           <Label htmlFor="p_username_pwd">当前密码（用于确认）</Label>
-          <Input
-            id="p_username_pwd"
-            type="password"
-            value={usernamePwd}
-            onChange={(_, d) => setUsernamePwd(d.value)}
-          />
+          <Input id="p_username_pwd" type="password" value={usernamePwd} onChange={(_, d) => setUsernamePwd(d.value)} />
         </div>
         {usernameMsg && (
           <MessageBar intent={usernameMsg.ok ? 'success' : 'error'} style={{ marginBottom: '12px' }}>
@@ -230,11 +217,7 @@ export function ProfilePage() {
             </MessageBarBody>
           </MessageBar>
         )}
-        <Button
-          appearance="primary"
-          onClick={saveUsername}
-          disabled={!newUsername.trim() || !usernamePwd}
-        >
+        <Button appearance="primary" onClick={saveUsername} disabled={!newUsername.trim() || !usernamePwd}>
           修改账户名
         </Button>
       </Card>
@@ -254,12 +237,7 @@ export function ProfilePage() {
         </div>
         <div className={styles.field}>
           <Label htmlFor="p_confirm_pwd">确认新密码</Label>
-          <Input
-            id="p_confirm_pwd"
-            type="password"
-            value={confirmPwd}
-            onChange={(_, d) => setConfirmPwd(d.value)}
-          />
+          <Input id="p_confirm_pwd" type="password" value={confirmPwd} onChange={(_, d) => setConfirmPwd(d.value)} />
         </div>
         {pwdMsg && (
           <MessageBar intent={pwdMsg.ok ? 'success' : 'error'} style={{ marginBottom: '12px' }}>
@@ -275,9 +253,7 @@ export function ProfilePage() {
       </Card>
 
       {/* 头像裁剪弹窗 */}
-      {cropFile && (
-        <AvatarCropDialog filePath={cropFile} onClose={() => setCropFile(null)} />
-      )}
+      {cropFile && <AvatarCropDialog filePath={cropFile} onClose={() => setCropFile(null)} />}
     </div>
   );
 }

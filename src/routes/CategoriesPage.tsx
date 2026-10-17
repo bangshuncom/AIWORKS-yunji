@@ -1,5 +1,5 @@
 // 分类管理页：树形多级子分类，拖拽排序 / 拖动变成子分类，浮动批量操作栏
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Input,
@@ -37,12 +37,14 @@ import {
   useDraggable,
   useDroppable,
   type DragEndEvent,
-  type DragOverEvent,
+  type DragMoveEvent,
 } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 import { categoryApi } from '../lib/tauri';
+import { confirmDanger, notifyError } from '../lib/dialog';
 import { usePerms } from '../hooks/usePerms';
 import type { Category, CreateCategory } from '../types/models';
-import { useSelection, BatchBar, runBatchAction } from '../components/batch';
+import { useSelection, BatchBar, runBatchAction } from '../components/Selection';
 import { CategoryTreeSelect } from '../components/CategoryTreeSelect';
 import { useSharedStyles } from '../styles/shared';
 
@@ -99,8 +101,7 @@ function findNode(nodes: DragNode[], id: number): DragNode | null {
 function isInSubtree(nodes: DragNode[], ancestorId: number, id: number): boolean {
   const a = findNode(nodes, ancestorId);
   if (!a) return false;
-  const walk = (ns: DragNode[]): boolean =>
-    ns.some((n) => n.id === id || walk(n.children));
+  const walk = (ns: DragNode[]): boolean => ns.some((n) => n.id === id || walk(n.children));
   return walk(a.children);
 }
 
@@ -124,12 +125,7 @@ function removeNode(nodes: DragNode[], id: number): [DragNode[], DragNode | null
 }
 
 /** 在目标节点前/后插入（同父级） */
-function insertSibling(
-  nodes: DragNode[],
-  targetId: number,
-  position: 'before' | 'after',
-  node: DragNode,
-): DragNode[] {
+function insertSibling(nodes: DragNode[], targetId: number, position: 'before' | 'after', node: DragNode): DragNode[] {
   const idx = nodes.findIndex((n) => n.id === targetId);
   if (idx >= 0) {
     const next = [...nodes];
@@ -236,7 +232,13 @@ function DragRow({
   const styles = useRowStyles();
   const { node, depth, hasChildren, collapsed } = row;
 
-  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDragRef,
+    transform,
+    isDragging,
+  } = useDraggable({
     id: node.id,
     disabled,
   });
@@ -261,6 +263,10 @@ function DragRow({
       style={{
         marginLeft: `${depth * 22}px`,
         opacity: isDragging ? 0.5 : 1,
+        // 让被拖动的行跟着光标走：否则整行只是变淡、原地不动，
+        // 完全看不出自己拖到哪了，也就没法瞄准「变成子分类」的中部区域
+        transform: CSS.Translate.toString(transform),
+        zIndex: isDragging ? 2 : undefined,
       }}
     >
       {/* 拖拽手柄：拖到同级位置=排序，拖到某行中部=变成其子分类 */}
@@ -286,10 +292,7 @@ function DragRow({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <Checkbox
-          checked={checked}
-          onChange={(_, d) => onToggleCheck(node.id, d.checked === true)}
-        />
+        <Checkbox checked={checked} onChange={(_, d) => onToggleCheck(node.id, d.checked === true)} />
       </span>
 
       {hasChildren ? (
@@ -362,6 +365,16 @@ export function CategoriesPage() {
   const selection = useSelection();
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [indicator, setIndicator] = useState<DropIndicator | null>(null);
+  // 迟滞判断要读「上一次的落点」，而 onDragMove 里拿到的 indicator 是本次渲染的闭包值，
+  // 所以用 ref 同步一份，顺便让 onDragEnd 读到的一定是最新落点
+  const indicatorRef = useRef<DropIndicator | null>(null);
+  const applyIndicator = (next: DropIndicator | null) => {
+    indicatorRef.current = next;
+    setIndicator(next);
+  };
+  // 拖到折叠行上停留一会儿才展开，相关计时器
+  const expandTimerRef = useRef<number | null>(null);
+  const pendingExpandRef = useRef<number | null>(null);
   const [saving, setSaving] = useState(false);
 
   // 本地编辑中的树（拖拽时乐观更新）
@@ -382,9 +395,7 @@ export function CategoriesPage() {
   const [createDescription, setCreateDescription] = useState('');
   const [createSlug, setCreateSlug] = useState('');
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const { data: tree, isLoading } = useQuery<Category[]>({
     queryKey: ['categories-tree'],
@@ -409,8 +420,7 @@ export function CategoriesPage() {
   });
 
   const updateMut = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: CreateCategory }) =>
-      categoryApi.update(id, payload),
+    mutationFn: ({ id, payload }: { id: number; payload: CreateCategory }) => categoryApi.update(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categories-tree'] });
       queryClient.invalidateQueries({ queryKey: ['categories-flat'] });
@@ -478,8 +488,8 @@ export function CategoriesPage() {
     });
   };
 
-  const handleDelete = (id: number, name: string) => {
-    if (confirm(`确认删除分类「${name}」及其所有子分类？关联资源不会被删除。`)) {
+  const handleDelete = async (id: number, name: string) => {
+    if (await confirmDanger(`确认删除分类「${name}」及其所有子分类？关联资源不会被删除。`)) {
       deleteMut.mutate(id);
     }
   };
@@ -497,41 +507,74 @@ export function CategoriesPage() {
 
   // --- 拖拽 ---
 
-  const onDragOver = (e: DragOverEvent) => {
+  // ⚠️ 位置计算必须放在 onDragMove 里，不能用 onDragOver：
+  // dnd-kit 的 onDragOver 是在依赖 [overId] 的 useEffect 中派发的，**只在切换目标行时触发**。
+  // 也就是说在同一行内上下移动时它根本不跑，落点永远停在刚进入该行那一刻算出的值——
+  // 而竖向进入一行必然是从上边缘或下边缘进来，算出来的只能是 before / after，
+  // 「拖到中部变成子分类」几乎不可能命中。onDragMove 每次移动都派发，才是正确入口。
+  const resolveIndicator = (e: DragMoveEvent): DropIndicator | null => {
     const { active, over } = e;
-    if (!over || active.id === over.id) {
-      setIndicator(null);
-      return;
-    }
+    if (!over || active.id === over.id) return null;
     const activeId = active.id as number;
     const targetId = over.id as number;
     // 不能拖入自己的子树
-    if (isInSubtree(nodes, activeId, targetId)) {
-      setIndicator(null);
-      return;
-    }
+    if (isInSubtree(nodes, activeId, targetId)) return null;
     const activeRect = active.rect.current.translated;
-    if (!activeRect) return;
+    if (!activeRect) return null;
     const overRect = over.rect;
     const centerY = activeRect.top + activeRect.height / 2 - overRect.top;
-    const h = overRect.height;
-    const position: DropPosition =
-      centerY < h * 0.25 ? 'before' : centerY > h * 0.75 ? 'after' : 'child';
-    setIndicator({ targetId, position });
+    const h = overRect.height || 1;
+    const ratio = centerY / h;
 
-    // 拖到中部（变成子分类）时自动展开目标节点
-    if (position === 'child' && collapsed.has(targetId)) {
-      setCollapsed((prev) => {
-        const s = new Set(prev);
-        s.delete(targetId);
-        return s;
-      });
+    // 迟滞：已经落在「变成子分类」上时，要移得更远才切回 before / after。
+    // 不加迟滞的话在阈值附近抖动会导致指示条来回闪
+    const prev = indicatorRef.current;
+    const sticky = prev?.targetId === targetId && prev.position === 'child';
+    const lower = sticky ? 0.15 : 0.3;
+    const upper = sticky ? 0.85 : 0.7;
+    const position: DropPosition = ratio < lower ? 'before' : ratio > upper ? 'after' : 'child';
+    return { targetId, position };
+  };
+
+  const clearAutoExpand = () => {
+    if (expandTimerRef.current != null) {
+      window.clearTimeout(expandTimerRef.current);
+      expandTimerRef.current = null;
+    }
+    pendingExpandRef.current = null;
+  };
+
+  const onDragMove = (e: DragMoveEvent) => {
+    const next = resolveIndicator(e);
+    applyIndicator(next);
+
+    // 想变成子分类但目标行是折叠的：停留一会儿再自动展开。
+    // 立刻展开会把下方所有行顶下去，光标下方的行换成别的，目标就跑了
+    if (next?.position === 'child' && collapsed.has(next.targetId)) {
+      if (pendingExpandRef.current !== next.targetId) {
+        clearAutoExpand();
+        pendingExpandRef.current = next.targetId;
+        expandTimerRef.current = window.setTimeout(() => {
+          const id = pendingExpandRef.current;
+          expandTimerRef.current = null;
+          pendingExpandRef.current = null;
+          if (id == null) return;
+          setCollapsed((prev) => {
+            const st = new Set(prev);
+            st.delete(id);
+            return st;
+          });
+        }, 600);
+      }
+    } else {
+      clearAutoExpand();
     }
   };
 
   const onDragEnd = async (e: DragEndEvent) => {
-    const ind = indicator;
-    setIndicator(null);
+    clearAutoExpand();
+    const ind = indicatorRef.current;
+    applyIndicator(null);
     if (!ind) return;
     const activeId = e.active.id as number;
     if (ind.targetId === activeId || isInSubtree(nodes, activeId, ind.targetId)) return;
@@ -562,7 +605,7 @@ export function CategoriesPage() {
       queryClient.invalidateQueries({ queryKey: ['categories-tree'] });
       queryClient.invalidateQueries({ queryKey: ['categories-flat'] });
     } catch (err: any) {
-      alert(err?.message || '排序保存失败');
+      await notifyError(err?.message || '排序保存失败');
       // 失败时恢复服务器数据
       queryClient.invalidateQueries({ queryKey: ['categories-tree'] });
     } finally {
@@ -593,12 +636,7 @@ export function CategoriesPage() {
         </h2>
       </div>
       <div>
-        <Button
-          icon={<AddRegular />}
-          appearance="primary"
-          onClick={() => openCreate(null)}
-          disabled={!canArticle}
-        >
+        <Button icon={<AddRegular />} appearance="primary" onClick={() => openCreate(null)} disabled={!canArticle}>
           新建分类
         </Button>
       </div>
@@ -612,9 +650,12 @@ export function CategoriesPage() {
       ) : (
         <DndContext
           sensors={sensors}
-          onDragOver={onDragOver}
+          onDragMove={onDragMove}
           onDragEnd={onDragEnd}
-          onDragCancel={() => setIndicator(null)}
+          onDragCancel={() => {
+            clearAutoExpand();
+            applyIndicator(null);
+          }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {rows.map((row) => (
@@ -704,11 +745,7 @@ export function CategoriesPage() {
               <DialogTrigger>
                 <Button appearance="secondary">取消</Button>
               </DialogTrigger>
-              <Button
-                appearance="primary"
-                onClick={handleCreate}
-                disabled={!createName.trim() || createMut.isPending}
-              >
+              <Button appearance="primary" onClick={handleCreate} disabled={!createName.trim() || createMut.isPending}>
                 创建
               </Button>
             </DialogActions>
@@ -724,27 +761,15 @@ export function CategoriesPage() {
             <DialogContent>
               <div className={s.field}>
                 <Label htmlFor="edit-name">名称 *</Label>
-                <Input
-                  id="edit-name"
-                  value={editName}
-                  onChange={(_, d) => setEditName(d.value)}
-                />
+                <Input id="edit-name" value={editName} onChange={(_, d) => setEditName(d.value)} />
               </div>
               <div className={s.field}>
                 <Label htmlFor="edit-slug">URL 标识</Label>
-                <Input
-                  id="edit-slug"
-                  value={editSlug}
-                  onChange={(_, d) => setEditSlug(d.value)}
-                />
+                <Input id="edit-slug" value={editSlug} onChange={(_, d) => setEditSlug(d.value)} />
               </div>
               <div className={s.field}>
                 <Label htmlFor="edit-desc">描述</Label>
-                <Textarea
-                  id="edit-desc"
-                  value={editDescription}
-                  onChange={(_, d) => setEditDescription(d.value)}
-                />
+                <Textarea id="edit-desc" value={editDescription} onChange={(_, d) => setEditDescription(d.value)} />
               </div>
               <div className={s.field}>
                 <Label>父分类（拖动排序也可快速调整层级）</Label>
@@ -762,11 +787,7 @@ export function CategoriesPage() {
               <DialogTrigger>
                 <Button appearance="secondary">取消</Button>
               </DialogTrigger>
-              <Button
-                appearance="primary"
-                onClick={handleUpdate}
-                disabled={!editName.trim() || updateMut.isPending}
-              >
+              <Button appearance="primary" onClick={handleUpdate} disabled={!editName.trim() || updateMut.isPending}>
                 保存
               </Button>
             </DialogActions>

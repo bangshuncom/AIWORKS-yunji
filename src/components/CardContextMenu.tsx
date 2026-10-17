@@ -1,13 +1,6 @@
 // 通用右键菜单组件：包裹任意卡片，右键时显示菜单
 import type { ReactElement } from 'react';
-import {
-  Menu,
-  MenuTrigger,
-  MenuPopover,
-  MenuList,
-  MenuItem,
-  tokens,
-} from '@fluentui/react-components';
+import { Menu, MenuTrigger, MenuPopover, MenuList, MenuItem, tokens } from '@fluentui/react-components';
 
 export interface ContextMenuItem {
   icon?: ReactElement;

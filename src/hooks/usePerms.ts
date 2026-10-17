@@ -3,14 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/authStore';
 import { settingsApi } from '../lib/tauri';
 
-export type Feature =
-  | 'article'
-  | 'article_own'
-  | 'collection'
-  | 'collection_own'
-  | 'tag'
-  | 'trash'
-  | 'user';
+export type Feature = 'article' | 'article_own' | 'collection' | 'collection_own' | 'tag' | 'trash' | 'user';
 
 export interface Perms {
   /** 是否已登录 */

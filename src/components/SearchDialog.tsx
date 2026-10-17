@@ -2,14 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Input,
-  Spinner,
-  Dropdown,
-  Option,
-  tokens,
-  makeStyles,
-} from '@fluentui/react-components';
+import { Input, Spinner, Dropdown, Option, tokens, makeStyles } from '@fluentui/react-components';
 import { SearchRegular, DismissRegular } from '@fluentui/react-icons';
 import { resourceApi, collectionApi, tagApi, authorApi, assetUrl } from '../lib/tauri';
 import { Pagination } from './Pagination';
@@ -245,31 +238,44 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
     enabled: enabled && type === 'author',
   });
 
-  const go = useCallback((path: string) => {
-    onClose();
-    navigate(path);
-  }, [navigate, onClose]);
+  const go = useCallback(
+    (path: string) => {
+      onClose();
+      navigate(path);
+    },
+    [navigate, onClose],
+  );
 
   if (!open) return null;
 
   const total =
-    type === 'article' ? articleQuery.data?.total ?? 0
-    : type === 'collection' ? collectionQuery.data?.total ?? 0
-    : type === 'tag' ? tagQuery.data?.total ?? 0
-    : authorQuery.data?.total ?? 0;
+    type === 'article'
+      ? (articleQuery.data?.total ?? 0)
+      : type === 'collection'
+        ? (collectionQuery.data?.total ?? 0)
+        : type === 'tag'
+          ? (tagQuery.data?.total ?? 0)
+          : (authorQuery.data?.total ?? 0);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const isFetching =
-    type === 'article' ? articleQuery.isFetching
-    : type === 'collection' ? collectionQuery.isFetching
-    : type === 'tag' ? tagQuery.isFetching
-    : authorQuery.isFetching;
+    type === 'article'
+      ? articleQuery.isFetching
+      : type === 'collection'
+        ? collectionQuery.isFetching
+        : type === 'tag'
+          ? tagQuery.isFetching
+          : authorQuery.isFetching;
 
   const renderResults = () => {
     if (!enabled) {
       return <div className={styles.emptyState}>{`输入关键词搜索${typeMeta.label}`}</div>;
     }
     if (isFetching) {
-      return <div className={styles.emptyState}><Spinner label="搜索中..." /></div>;
+      return (
+        <div className={styles.emptyState}>
+          <Spinner label="搜索中..." />
+        </div>
+      );
     }
     if (type === 'article') {
       const items: Resource[] = articleQuery.data?.items ?? [];
@@ -303,7 +309,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
         <>
           {items.map((c) => (
             <div key={c.id} className={styles.resultItem} onClick={() => go(`/collection/${c.id}`)}>
-              {(c.thumbnail_path || c.cover_path) ? (
+              {c.thumbnail_path || c.cover_path ? (
                 <img className={styles.thumb} src={assetUrl(c.thumbnail_path || c.cover_path!)} alt="" />
               ) : (
                 <div className={styles.thumbPlaceholder}>{c.title.charAt(0).toUpperCase()}</div>
@@ -312,7 +318,12 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
                 <span className={styles.resultTitle}>{c.title}</span>
                 <span className={styles.resultMeta}>
                   {c.resource_count != null && `共 ${c.resource_count} 篇`}
-                  {c.description ? <><span>·</span>{c.description}</> : null}
+                  {c.description ? (
+                    <>
+                      <span>·</span>
+                      {c.description}
+                    </>
+                  ) : null}
                 </span>
               </div>
             </div>
@@ -347,9 +358,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
             {a.avatar_path ? (
               <img className={styles.avatar} src={assetUrl(a.avatar_path)} alt="" />
             ) : (
-              <div className={styles.avatarPlaceholder}>
-                {(a.nickname || a.username).charAt(0).toUpperCase()}
-              </div>
+              <div className={styles.avatarPlaceholder}>{(a.nickname || a.username).charAt(0).toUpperCase()}</div>
             )}
             <div className={styles.resultBody}>
               <span className={styles.resultTitle}>{a.nickname || a.username}</span>
@@ -392,9 +401,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
         </div>
 
         {/* 结果列表 */}
-        <div className={styles.body}>
-          {renderResults()}
-        </div>
+        <div className={styles.body}>{renderResults()}</div>
 
         {/* 分页 */}
         {totalPages > 1 && (

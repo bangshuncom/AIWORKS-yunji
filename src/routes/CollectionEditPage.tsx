@@ -17,11 +17,7 @@ import {
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
-import {
-  ArrowLeftRegular,
-  ArrowUploadRegular,
-  DeleteRegular,
-} from '@fluentui/react-icons';
+import { ArrowLeftRegular, ArrowUploadRegular, DeleteRegular } from '@fluentui/react-icons';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
@@ -34,8 +30,10 @@ import {
   listPendingAssets,
   clearPendingAsset,
 } from '../lib/tauri';
+import { errorText } from '../lib/errors';
 import type { CreateCollection, AuthorInfo } from '../types/models';
 import { MarkdownEditor } from '../components/MarkdownEditor';
+import { TranslateButton } from '../components/common/TranslateButton';
 import { usePerms } from '../hooks/usePerms';
 import { useAuthStore } from '../stores/authStore';
 
@@ -61,6 +59,10 @@ export function CollectionEditPage() {
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState('private');
   const [accessPassword, setAccessPassword] = useState('');
+  // 服务端记录的密码状态：是否已设置（不回传密码本身）
+  const [hasPassword, setHasPassword] = useState(false);
+  // 本次保存是否清除访问密码
+  const [clearPassword, setClearPassword] = useState(false);
   const [thumbnailPath, setThumbnailPath] = useState('');
   // 选中但尚未上传的本地封面（保存时才上传）
   const [pendingThumbnail, setPendingThumbnail] = useState<string | null>(null);
@@ -77,10 +79,15 @@ export function CollectionEditPage() {
   });
 
   // 编辑模式加载合集
-  const { data: collection, isLoading } = useQuery({
+  const {
+    data: collection,
+    isLoading,
+    error: loadError,
+  } = useQuery({
     queryKey: ['collection', cidNum],
     queryFn: () => collectionApi.get(cidNum),
     enabled: isEdit && !Number.isNaN(cidNum),
+    retry: false,
   });
 
   useEffect(() => {
@@ -88,7 +95,7 @@ export function CollectionEditPage() {
       setTitle(collection.title);
       setDescription(collection.description);
       setVisibility(collection.visibility);
-      setAccessPassword(collection.access_password);
+      setHasPassword(!!collection.has_password);
       setThumbnailPath(collection.thumbnail_path);
       setContent(collection.content || '');
       setAuthorId(collection.user_id ?? null);
@@ -100,10 +107,7 @@ export function CollectionEditPage() {
   const uploadContentAsset = async (kind: 'image' | 'file') => {
     const selected = await openDialog({
       multiple: false,
-      filters:
-        kind === 'image'
-          ? [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }]
-          : undefined,
+      filters: kind === 'image' ? [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }] : undefined,
     });
     if (typeof selected !== 'string') return null;
     const name = selected.split(/[\\/]/).pop() || 'file';
@@ -142,6 +146,7 @@ export function CollectionEditPage() {
         description: description.trim(),
         visibility,
         access_password: accessPassword,
+        clear_password: clearPassword || undefined,
         thumbnail_path: thumbnailPath,
         content: finalContent.trim(),
         author_id: isAdmin && authorId != null && authorId !== currentUserId ? authorId : undefined,
@@ -176,7 +181,17 @@ export function CollectionEditPage() {
   });
 
   if (isEdit && isLoading) return <Spinner label="加载中..." />;
-  if (isEdit && !loaded) return <Spinner label="加载中..." />;
+  // 取数失败（如无查看权限）时不要一直转圈
+  if (isEdit && !loaded) {
+    if (loadError) {
+      return (
+        <MessageBar intent="error">
+          <MessageBarBody>{errorText(loadError) || '加载合集失败'}</MessageBarBody>
+        </MessageBar>
+      );
+    }
+    return <Spinner label="加载中..." />;
+  }
 
   return (
     <div className={styles.container}>
@@ -189,11 +204,7 @@ export function CollectionEditPage() {
         >
           返回
         </Button>
-        <Button
-          appearance="primary"
-          onClick={() => saveMut.mutate()}
-          disabled={saveMut.isPending || !title.trim()}
-        >
+        <Button appearance="primary" onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !title.trim()}>
           {saveMut.isPending ? '保存中...' : '保存'}
         </Button>
       </div>
@@ -208,17 +219,30 @@ export function CollectionEditPage() {
       <Card style={{ padding: '16px' }}>
         <div className={styles.field}>
           <Label htmlFor="title">名称 *</Label>
-          <Input id="title" value={title} onChange={(_, d) => setTitle(d.value)} placeholder="合集名称" />
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+            <Input
+              id="title"
+              value={title}
+              onChange={(_, d) => setTitle(d.value)}
+              placeholder="合集名称"
+              style={{ flex: 1 }}
+            />
+            <TranslateButton value={title} onChange={setTitle} />
+          </div>
         </div>
         <div className={styles.field}>
           <Label htmlFor="desc">描述</Label>
-          <Textarea
-            id="desc"
-            value={description}
-            onChange={(_, d) => setDescription(d.value)}
-            rows={2}
-            placeholder="可选描述"
-          />
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+            <Textarea
+              id="desc"
+              value={description}
+              onChange={(_, d) => setDescription(d.value)}
+              rows={2}
+              placeholder="可选描述"
+              style={{ flex: 1 }}
+            />
+            <TranslateButton value={description} onChange={setDescription} />
+          </div>
         </div>
         <div className={styles.row}>
           <div className={styles.field}>
@@ -226,10 +250,16 @@ export function CollectionEditPage() {
             <Dropdown
               value={visibility === 'public' ? '公开' : '私有'}
               selectedOptions={[visibility]}
-              onOptionSelect={(_, d) => { if (d.optionValue) setVisibility(d.optionValue); }}
+              onOptionSelect={(_, d) => {
+                if (d.optionValue) setVisibility(d.optionValue);
+              }}
             >
-              <Option value="private" text="私有">私有</Option>
-              <Option value="public" text="公开">公开</Option>
+              <Option value="private" text="私有">
+                私有
+              </Option>
+              <Option value="public" text="公开">
+                公开
+              </Option>
             </Dropdown>
           </div>
           {isAdmin && (
@@ -237,10 +267,11 @@ export function CollectionEditPage() {
               <Label>发布身份（马甲）</Label>
               <Dropdown
                 value={
-                  authorId == null ? '当前账号'
-                  : authors?.find((a) => a.id === authorId)
-                    ? `${authors.find((a) => a.id === authorId)!.nickname || authors.find((a) => a.id === authorId)!.username}`
-                    : `用户 #${authorId}`
+                  authorId == null
+                    ? '当前账号'
+                    : authors?.find((a) => a.id === authorId)
+                      ? `${authors.find((a) => a.id === authorId)!.nickname || authors.find((a) => a.id === authorId)!.username}`
+                      : `用户 #${authorId}`
                 }
                 selectedOptions={[String(authorId ?? 'me')]}
                 onOptionSelect={(_, d) => {
@@ -248,7 +279,9 @@ export function CollectionEditPage() {
                   setAuthorId(v === 'me' ? null : Number(v));
                 }}
               >
-                <Option value="me" text="当前账号">当前账号</Option>
+                <Option value="me" text="当前账号">
+                  当前账号
+                </Option>
                 {authors?.map((a) => (
                   <Option key={a.id} value={String(a.id)} text={a.nickname || a.username}>
                     {a.nickname || a.username}
@@ -259,13 +292,41 @@ export function CollectionEditPage() {
           )}
         </div>
         <div className={styles.field}>
-          <Label htmlFor="pwd">访问密码（留空则不限制）</Label>
-          <Input
-            id="pwd"
-            type="password"
-            value={accessPassword}
-            onChange={(_, d) => setAccessPassword(d.value)}
-          />
+          <Label htmlFor="pwd">访问密码</Label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Input
+              id="pwd"
+              type="password"
+              placeholder={hasPassword ? '已设置密码，留空则不修改' : '留空 = 不设密码'}
+              value={accessPassword}
+              onChange={(_, d) => {
+                setAccessPassword(d.value);
+                setClearPassword(false);
+              }}
+            />
+            {hasPassword && (
+              <Button
+                appearance="outline"
+                onClick={() => {
+                  setClearPassword(!clearPassword);
+                  setAccessPassword('');
+                }}
+              >
+                {clearPassword ? '撤销清除' : '清除密码'}
+              </Button>
+            )}
+          </div>
+          <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
+            {clearPassword
+              ? '保存后清除访问密码'
+              : accessPassword
+                ? '保存后设为新的访问密码，读者需凭密码查看'
+                : hasPassword
+                  ? '已设置访问密码，留空则保持不变（作者本人与管理员不受密码限制）'
+                  : visibility === 'public'
+                    ? '提示：公开且不设密码 = 任何人（包括未登录用户）可访问'
+                    : '提示：私有合集仅作者本人、管理员，或凭密码解锁后可访问'}
+          </span>
         </div>
         <div className={styles.field}>
           <Label>封面</Label>
@@ -308,7 +369,10 @@ export function CollectionEditPage() {
                   appearance="subtle"
                   size="small"
                   icon={<DeleteRegular />}
-                  onClick={() => { setPendingThumbnail(null); setThumbnailPath(''); }}
+                  onClick={() => {
+                    setPendingThumbnail(null);
+                    setThumbnailPath('');
+                  }}
                 >
                   清除
                 </Button>
@@ -317,7 +381,10 @@ export function CollectionEditPage() {
           </div>
         </div>
         <div className={styles.field} style={{ marginBottom: 0 }}>
-          <Label>正文（Markdown，支持粘贴图片自动本地化）</Label>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <Label>正文（Markdown，支持粘贴图片自动本地化）</Label>
+            <TranslateButton value={content} onChange={setContent} />
+          </div>
           <MarkdownEditor
             value={content}
             onChange={setContent}

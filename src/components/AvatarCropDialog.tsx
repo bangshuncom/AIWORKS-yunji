@@ -46,10 +46,14 @@ export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }
     let url = '';
     let cancelled = false;
     const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
-      : ext === 'webp' ? 'image/webp'
-      : ext === 'gif' ? 'image/gif'
-      : 'image/png';
+    const mime =
+      ext === 'jpg' || ext === 'jpeg'
+        ? 'image/jpeg'
+        : ext === 'webp'
+          ? 'image/webp'
+          : ext === 'gif'
+            ? 'image/gif'
+            : 'image/png';
     readFile(filePath)
       .then((bytes) => {
         if (cancelled) return;
@@ -68,21 +72,18 @@ export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }
   const realScale = minScale * zoom;
 
   // 限制偏移，保证图片始终铺满视口
-  const clamp = useCallback(
-    (s: number, p: { x: number; y: number }, w: number, h: number) => {
-      const dw = w * s;
-      const dh = h * s;
-      const maxX = 0;
-      const minX = VIEW - dw;
-      const maxY = 0;
-      const minY = VIEW - dh;
-      return {
-        x: dw <= VIEW ? (VIEW - dw) / 2 : Math.min(maxX, Math.max(minX, p.x)),
-        y: dh <= VIEW ? (VIEW - dh) / 2 : Math.min(maxY, Math.max(minY, p.y)),
-      };
-    },
-    [],
-  );
+  const clamp = useCallback((s: number, p: { x: number; y: number }, w: number, h: number) => {
+    const dw = w * s;
+    const dh = h * s;
+    const maxX = 0;
+    const minX = VIEW - dw;
+    const maxY = 0;
+    const minY = VIEW - dh;
+    return {
+      x: dw <= VIEW ? (VIEW - dw) / 2 : Math.min(maxX, Math.max(minX, p.x)),
+      y: dh <= VIEW ? (VIEW - dh) / 2 : Math.min(maxY, Math.max(minY, p.y)),
+    };
+  }, []);
 
   // 缩放时以视口中心为锚点
   const applyZoom = useCallback(
@@ -134,10 +135,13 @@ export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }
     try {
       const img = new Image();
       img.src = src;
-      await img.decode().catch(() => new Promise((res, rej) => {
-        img.onload = res;
-        img.onerror = rej;
-      }));
+      await img.decode().catch(
+        () =>
+          new Promise((res, rej) => {
+            img.onload = res;
+            img.onerror = rej;
+          }),
+      );
       const canvas = document.createElement('canvas');
       canvas.width = OUTPUT;
       canvas.height = OUTPUT;
@@ -180,7 +184,12 @@ export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }
   }, [busy, onClose]);
 
   return (
-    <Dialog open onOpenChange={(_, d) => { if (!d.open && !busy) onClose(); }}>
+    <Dialog
+      open
+      onOpenChange={(_, d) => {
+        if (!d.open && !busy) onClose();
+      }}
+    >
       <DialogSurface>
         <DialogBody>
           <DialogTitle>裁剪头像</DialogTitle>
@@ -203,7 +212,15 @@ export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }
                 }}
               >
                 {!size && (
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
                     <Spinner size="small" />
                   </div>
                 )}
@@ -243,7 +260,11 @@ export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }
                 拖动调整位置，滑动缩放，输出 {OUTPUT}×{OUTPUT} 方形 PNG
               </span>
               {error && <span style={{ fontSize: '12px', color: tokens.colorPaletteRedForeground1 }}>{error}</span>}
-              {loadErr && <span style={{ fontSize: '12px', color: tokens.colorPaletteRedForeground1 }}>读取图片失败：{loadErr}</span>}
+              {loadErr && (
+                <span style={{ fontSize: '12px', color: tokens.colorPaletteRedForeground1 }}>
+                  读取图片失败：{loadErr}
+                </span>
+              )}
             </div>
           </DialogContent>
           <DialogActions>

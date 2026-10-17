@@ -212,7 +212,14 @@ export function Navbar() {
   // 当前处于某分类的筛选视图时，"全部"不再高亮
   const isCategoryView = new URLSearchParams(location.search).has('category');
 
-  const NavItem = ({ icon, label, path, onClick, count, active }: {
+  const NavItem = ({
+    icon,
+    label,
+    path,
+    onClick,
+    count,
+    active,
+  }: {
     icon: React.ReactNode;
     label: string;
     path?: string;
@@ -266,12 +273,7 @@ export function Navbar() {
       <div className={styles.nav}>
         {/* 上半部分：一级分类 */}
         <div className={styles.navTop}>
-          <NavItem
-            icon={<HomeRegular />}
-            label="全部"
-            path="/"
-            active={currentPath === '/' && !isCategoryView}
-          />
+          <NavItem icon={<HomeRegular />} label="全部" path="/" active={currentPath === '/' && !isCategoryView} />
           {categories.map((cat) => (
             <CategoryNavItem key={cat.id} cat={cat} level={0} />
           ))}
@@ -279,28 +281,10 @@ export function Navbar() {
 
         {/* 下半部分：合集/标签/回收站 */}
         <div className={styles.navBottom}>
-          <NavItem
-            icon={<FolderRegular />}
-            label="合集"
-            path="/collections"
-          />
-          <NavItem
-            icon={<TagRegular />}
-            label="标签"
-            path="/tags"
-          />
-          <NavItem
-            icon={<PeopleRegular />}
-            label="作者"
-            path="/authors"
-          />
-          {canTrash && (
-            <NavItem
-              icon={<DeleteRegular />}
-              label="回收站"
-              path="/trash"
-            />
-          )}
+          <NavItem icon={<FolderRegular />} label="合集" path="/collections" />
+          <NavItem icon={<TagRegular />} label="标签" path="/tags" />
+          <NavItem icon={<PeopleRegular />} label="作者" path="/authors" />
+          {canTrash && <NavItem icon={<DeleteRegular />} label="回收站" path="/trash" />}
         </div>
       </div>
 
@@ -325,19 +309,19 @@ export function Navbar() {
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-              {canArticle && (
-                <MenuItem icon={<AddRegular />} onClick={() => navigate('/edit')}>
-                  新建文章
+                {canArticle && (
+                  <MenuItem icon={<AddRegular />} onClick={() => navigate('/edit')}>
+                    新建文章
+                  </MenuItem>
+                )}
+                {canArticle && (
+                  <MenuItem icon={<AppsRegular />} onClick={() => navigate('/categories')}>
+                    分类管理
+                  </MenuItem>
+                )}
+                <MenuItem icon={<PersonRegular />} onClick={() => navigate('/profile')}>
+                  个人资料
                 </MenuItem>
-              )}
-              {canArticle && (
-                <MenuItem icon={<AppsRegular />} onClick={() => navigate('/categories')}>
-                  分类管理
-                </MenuItem>
-              )}
-              <MenuItem icon={<PersonRegular />} onClick={() => navigate('/profile')}>
-                个人资料
-              </MenuItem>
                 {canSettings && (
                   <MenuItem icon={<SettingsRegular />} onClick={() => navigate('/admin')}>
                     系统设置
@@ -345,7 +329,10 @@ export function Navbar() {
                 )}
                 <MenuItem
                   icon={<ArrowExitRegular />}
-                  onClick={async () => { await logout(); navigate('/'); }}
+                  onClick={async () => {
+                    await logout();
+                    navigate('/');
+                  }}
                 >
                   退出登录
                 </MenuItem>
@@ -385,16 +372,16 @@ function CategoryNavItem({ cat, level }: { cat: Category; level: number }) {
       >
         <span
           className={styles.navItemIcon}
-          style={{ cursor: 'pointer', fontSize: '16px', color: isActive ? tokens.colorBrandForeground1 : tokens.colorNeutralForeground3 }}
+          style={{
+            cursor: 'pointer',
+            fontSize: '16px',
+            color: isActive ? tokens.colorBrandForeground1 : tokens.colorNeutralForeground3,
+          }}
           onClick={() => navigate(catPath)}
         >
-          {hasChildren ? (expanded ? <FolderOpenRegular /> : <FolderIcon />) : <DocumentRegular />}
+          {hasChildren ? expanded ? <FolderOpenRegular /> : <FolderIcon /> : <DocumentRegular />}
         </span>
-        <span
-          className={styles.navItemText}
-          style={{ cursor: 'pointer' }}
-          onClick={() => navigate(catPath)}
-        >
+        <span className={styles.navItemText} style={{ cursor: 'pointer' }} onClick={() => navigate(catPath)}>
           {cat.name}
         </span>
         {cat.resource_count != null && cat.resource_count > 0 && (
@@ -402,16 +389,26 @@ function CategoryNavItem({ cat, level }: { cat: Category; level: number }) {
         )}
         {hasChildren && (
           <span
-            style={{ cursor: 'pointer', width: '16px', flexShrink: 0, display: 'flex', justifyContent: 'center', color: tokens.colorNeutralForeground3 }}
-            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+            style={{
+              cursor: 'pointer',
+              width: '16px',
+              flexShrink: 0,
+              display: 'flex',
+              justifyContent: 'center',
+              color: tokens.colorNeutralForeground3,
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
           >
             {expanded ? <ChevronDownRegular fontSize={12} /> : <ChevronRightRegular fontSize={12} />}
           </span>
         )}
       </div>
-      {hasChildren && expanded && cat.children!.map((child) => (
-        <CategoryNavItem key={child.id} cat={child} level={level + 1} />
-      ))}
+      {hasChildren &&
+        expanded &&
+        cat.children!.map((child) => <CategoryNavItem key={child.id} cat={child} level={level + 1} />)}
     </div>
   );
 }

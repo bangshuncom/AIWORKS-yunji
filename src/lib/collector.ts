@@ -66,7 +66,10 @@ export function urlMatches(patterns: string[] | undefined, url: string): boolean
 }
 
 function normalizeText(s: string): string {
-  return s.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  return s
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function absolutize(v: string, base: string): string {
@@ -115,15 +118,34 @@ function readValue(el: Element, spec: FieldSpec): string {
     // 转成保留段落换行的纯文本（用于 Markdown 正文），而非 innerHTML 原始标签
     raw = htmlToText(el);
   } else {
-    raw = spec.text === false ? (el.textContent ?? '') : el.textContent ?? '';
+    raw = spec.text === false ? (el.textContent ?? '') : (el.textContent ?? '');
     raw = normalizeText(raw);
   }
   return applyRegex(raw.trim(), spec);
 }
 
 const BLOCK_TAGS = new Set([
-  'p', 'div', 'section', 'article', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-  'ul', 'ol', 'li', 'blockquote', 'pre', 'table', 'tr', 'thead', 'tbody',
+  'p',
+  'div',
+  'section',
+  'article',
+  'br',
+  'hr',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'ul',
+  'ol',
+  'li',
+  'blockquote',
+  'pre',
+  'table',
+  'tr',
+  'thead',
+  'tbody',
 ]);
 const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'img', 'video', 'audio', 'iframe', 'svg']);
 
@@ -180,7 +202,7 @@ function resolveTarget(doc: Document, spec: FieldSpec): Element[] {
     if (!hit) return [];
     return Array.from(hit.querySelectorAll(target));
   }
-  const root = spec.scope ? doc.querySelector(spec.scope) ?? doc : doc;
+  const root = spec.scope ? (doc.querySelector(spec.scope) ?? doc) : doc;
   if (!spec.selector) return [];
   return Array.from(root.querySelectorAll(spec.selector));
 }
@@ -214,9 +236,7 @@ export function extractPage(html: string, finalUrl: string, plugin: CollectorPlu
       return [];
     }
     const picked = spec.multiple ? els : els.slice(spec.nth ?? 0, (spec.nth ?? 0) + 1);
-    return picked
-      .map((el) => readValue(el, spec))
-      .filter((v) => v.length > 0);
+    return picked.map((el) => readValue(el, spec)).filter((v) => v.length > 0);
   };
 
   const urlField = (name: string): string[] =>

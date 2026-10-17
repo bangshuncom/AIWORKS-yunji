@@ -1,21 +1,12 @@
 // 合集详情页：缩略图 + 标题/元信息 + Markdown 正文 + 合集内文章列表
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Button,
-  Spinner,
-  Badge,
-  MessageBar,
-  MessageBarBody,
-  makeStyles,
-  tokens,
-} from '@fluentui/react-components';
-import {
-  ArrowLeftRegular,
-  EditRegular,
-  DocumentRegular,
-} from '@fluentui/react-icons';
+import { Button, Spinner, Badge, MessageBar, MessageBarBody, makeStyles, tokens } from '@fluentui/react-components';
+import { ArrowLeftRegular, EditRegular, DocumentRegular, KeyRegular, LockClosedRegular } from '@fluentui/react-icons';
 import { collectionApi, resourceApi, assetUrl } from '../lib/tauri';
+import { isForbidden, errorText } from '../lib/errors';
+import { PasswordDialog } from '../components/common/PasswordDialog';
 import type { Collection, Resource } from '../types/models';
 import { usePerms } from '../hooks/usePerms';
 import { MarkdownView } from '../components/MarkdownView';
@@ -41,7 +32,14 @@ const useStyles = makeStyles({
   },
   headerMain: { flex: 1, minWidth: 0 },
   title: { fontSize: '26px', fontWeight: 700, margin: 0, lineHeight: 1.3 },
-  meta: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', fontSize: '13px', color: tokens.colorNeutralForeground3 },
+  meta: {
+    display: 'flex',
+    gap: '10px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    fontSize: '13px',
+    color: tokens.colorNeutralForeground3,
+  },
   descBlock: {
     margin: 0,
     fontSize: '14px',
@@ -84,8 +82,22 @@ const useStyles = makeStyles({
     transition: 'background 0.15s',
     '&:hover': { backgroundColor: tokens.colorNeutralBackground1Hover },
   },
-  resTitle: { fontSize: '15px', fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  resDesc: { fontSize: '12px', color: tokens.colorNeutralForeground3, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  resTitle: {
+    fontSize: '15px',
+    fontWeight: 600,
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  resDesc: {
+    fontSize: '12px',
+    color: tokens.colorNeutralForeground3,
+    marginTop: '2px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
 });
 
 export function CollectionDetailPage() {
@@ -94,11 +106,22 @@ export function CollectionDetailPage() {
   const navigate = useNavigate();
   const canEdit = usePerms().can('collection_own');
   const cidNum = Number(cid);
+  // 访问密码：无权限时自动弹一次密码框
+  const [pwdOpen, setPwdOpen] = useState(false);
+  // 已通过密码校验但仍读不到内容 = 私有合集且权限不足
+  const [pwdPassed, setPwdPassed] = useState(false);
 
-  const { data: collection, isLoading } = useQuery<Collection>({
+  const {
+    data: collection,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery<Collection>({
     queryKey: ['collection', cidNum],
     queryFn: () => collectionApi.get(cidNum),
     enabled: !!cid && !Number.isNaN(cidNum),
+    // 权限不足属于预期结果，不必重试
+    retry: (count, e) => !isForbidden(e) && count < 2,
   });
 
   const { data: resData } = useQuery<{ items: Resource[] }>({
@@ -107,11 +130,64 @@ export function CollectionDetailPage() {
     enabled: !!cid && !Number.isNaN(cidNum),
   });
 
+  // 受保护合集：首次进入自动弹出密码框
+  useEffect(() => {
+    if (isForbidden(error) && !pwdPassed) setPwdOpen(true);
+  }, [error, pwdPassed]);
+
+  // 切换到其他合集时重置解锁状态
+  useEffect(() => {
+    setPwdPassed(false);
+    setPwdOpen(false);
+  }, [cidNum]);
+
   if (isLoading) return <Spinner label="加载中..." />;
   if (!collection) {
+    // 私有 / 设了访问密码的合集：给出密码入口
+    if (isForbidden(error)) {
+      return (
+        <div className={styles.container}>
+          <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => navigate('/collections')}>
+            返回合集
+          </Button>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '48px 24px',
+              textAlign: 'center',
+              border: `1px solid ${tokens.colorNeutralStroke2}`,
+              borderRadius: '12px',
+              backgroundColor: tokens.colorNeutralBackground1,
+            }}
+          >
+            <LockClosedRegular style={{ fontSize: '32px', color: tokens.colorNeutralForeground3 }} />
+            <div style={{ fontSize: '16px', fontWeight: 600 }}>此合集受保护</div>
+            <div style={{ fontSize: '13px', color: tokens.colorNeutralForeground3 }}>
+              {pwdPassed ? '密码已通过，但你没有查看该私有合集的权限。' : '该合集为私有合集，或设有访问密码。'}
+            </div>
+            <Button appearance="primary" icon={<KeyRegular />} onClick={() => setPwdOpen(true)}>
+              输入访问密码
+            </Button>
+          </div>
+          <PasswordDialog
+            open={pwdOpen}
+            title="输入访问密码"
+            onSubmit={(pwd) => collectionApi.checkAccess(cidNum, pwd)}
+            onUnlocked={() => {
+              setPwdPassed(true);
+              void refetch();
+            }}
+            onClose={() => setPwdOpen(false)}
+          />
+        </div>
+      );
+    }
     return (
       <MessageBar intent="warning">
-        <MessageBarBody>合集不存在或已被删除</MessageBarBody>
+        <MessageBarBody>{errorText(error) || '合集不存在或已被删除'}</MessageBarBody>
       </MessageBar>
     );
   }
@@ -125,7 +201,11 @@ export function CollectionDetailPage() {
           返回合集
         </Button>
         {canEdit && (
-          <Button appearance="outline" icon={<EditRegular />} onClick={() => navigate(`/collection-edit/${collection.id}`)}>
+          <Button
+            appearance="outline"
+            icon={<EditRegular />}
+            onClick={() => navigate(`/collection-edit/${collection.id}`)}
+          >
             编辑合集
           </Button>
         )}
@@ -147,7 +227,14 @@ export function CollectionDetailPage() {
             <span title={formatTime(collection.created_at)}>创建于 {relativeTime(collection.created_at)}</span>
             <span title={formatTime(collection.updated_at)}>更新于 {relativeTime(collection.updated_at)}</span>
             <Badge appearance="outline">{collection.visibility === 'public' ? '公开' : '私有'}</Badge>
-            <Badge appearance="filled" color="informative">{collection.resource_count ?? resources.length} 篇文章</Badge>
+            {collection.has_password && (
+              <Badge appearance="outline" icon={<KeyRegular />}>
+                需要访问密码
+              </Badge>
+            )}
+            <Badge appearance="filled" color="informative">
+              {collection.resource_count ?? resources.length} 篇文章
+            </Badge>
           </div>
           {collection.description && (
             <p className={styles.descBlock} style={{ marginTop: '12px' }}>
@@ -157,9 +244,7 @@ export function CollectionDetailPage() {
         </div>
       </div>
 
-      {collection.content && (
-        <MarkdownView content={collection.content} className={styles.content} />
-      )}
+      {collection.content && <MarkdownView content={collection.content} className={styles.content} />}
 
       {/* 合集内文章列表 */}
       <div>
@@ -168,7 +253,9 @@ export function CollectionDetailPage() {
           合集文章（{resources.length}）
         </h3>
         {resources.length === 0 ? (
-          <div style={{ color: tokens.colorNeutralForeground3, fontSize: '13px', padding: '20px', textAlign: 'center' }}>
+          <div
+            style={{ color: tokens.colorNeutralForeground3, fontSize: '13px', padding: '20px', textAlign: 'center' }}
+          >
             暂无文章
           </div>
         ) : (
@@ -183,7 +270,15 @@ export function CollectionDetailPage() {
                     loading="lazy"
                   />
                 ) : (
-                  <div style={{ width: '64px', height: '48px', borderRadius: '6px', backgroundColor: tokens.colorNeutralBackground3, flexShrink: 0 }} />
+                  <div
+                    style={{
+                      width: '64px',
+                      height: '48px',
+                      borderRadius: '6px',
+                      backgroundColor: tokens.colorNeutralBackground3,
+                      flexShrink: 0,
+                    }}
+                  />
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className={styles.resTitle}>{r.title}</div>

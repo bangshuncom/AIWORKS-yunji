@@ -1,6 +1,7 @@
-// 网页采集弹窗：粘贴单页 URL → 选择采集插件 → 抓取并按选择器提取 → 预览勾选 → 回填编辑表单
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+// 网页采集弹窗：粘贴单页 URL → 选择采集插件 → 抓取并按选择器提取 → 预览勾选 → 回填编辑表单。
+// 只负责「把页面内容读成结构化字段」：不写库、不下载图片。
+// 封面与图集在此仅登记为「待本地化」，真正下载发生在保存时（见 EditPage 的 saveMut）。
+import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Input,
@@ -23,25 +24,22 @@ import {
 } from '@fluentui/react-icons';
 import { open } from '@tauri-apps/plugin-dialog';
 import { collectorApi } from '../lib/tauri';
+import { confirmInfo } from '../lib/dialog';
 import type { CollectorInfo } from '../lib/tauri';
-import {
-  extractPage,
-  magnetName,
-  magnetTrackerCount,
-  parsePlugin,
-  urlMatches,
-} from '../lib/collector';
+import { extractPage, magnetName, magnetTrackerCount, parsePlugin, urlMatches } from '../lib/collector';
 import type { CollectResult } from '../lib/collector';
 
 export interface CollectApplyPayload {
   title: string;
   /** 游戏简介 → 写入文章正文（Markdown） */
   content: string;
+  /** 远程封面地址；仅登记，保存时才下载本地化 */
   thumbnailUrl: string | null;
+  /** 远程图集地址；仅登记，保存时才下载本地化 */
   imageUrls: string[];
   magnets: string[];
   sourceUrl: string | null;
-  /** 抓图防盗链 Referer（页面最终 URL） */
+  /** 抓图防盗链 Referer（页面最终 URL），保存时下载图片需要 */
   referer: string;
 }
 
@@ -147,40 +145,9 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     background: tokens.colorNeutralBackground2,
   },
-  proxyBanner: {
-    fontSize: '12px',
-    padding: '6px 10px',
-    borderRadius: '6px',
-  },
-  taskRow: { display: 'flex', flexDirection: 'column', gap: '3px', padding: '6px 2px' },
-  taskLine: { display: 'flex', justifyContent: 'space-between', fontSize: '12px', gap: '8px' },
-  barTrack: {
-    height: '5px',
-    borderRadius: '3px',
-    background: tokens.colorNeutralBackground3,
-    overflow: 'hidden',
-  },
-  barFill: { height: '100%', background: tokens.colorBrandBackground, transition: 'width .2s' },
 });
 
-type Step = 'input' | 'loading' | 'preview' | 'applying';
-
-interface CollectorProgressEvent {
-  kind: 'cover' | 'image';
-  index: number;
-  total_tasks: number;
-  done: number;
-  size?: number | null;
-  round: number;
-  proxy?: string | null;
-}
-
-interface TaskProgress {
-  done: number;
-  size?: number | null;
-  round: number;
-  speed: number; // bytes/s
-}
+type Step = 'input' | 'loading' | 'preview';
 
 export function CollectDialog({
   hasThumbnail,
@@ -207,11 +174,6 @@ export function CollectDialog({
   const [imgSet, setImgSet] = useState<Set<number>>(new Set());
   const [magSet, setMagSet] = useState<Set<number>>(new Set());
 
-  // ---- 下载实时进度（collector-progress 事件）----
-  const [proxy, setProxy] = useState<string | null | undefined>(undefined);
-  const [progress, setProgress] = useState<Record<string, TaskProgress>>({});
-  const speedRef = useRef<Map<string, { t: number; b: number }>>(new Map());
-
   useEffect(() => {
     collectorApi
       .list()
@@ -235,51 +197,7 @@ export function CollectDialog({
     if (m) setSelectedId(m.id);
   }, [url, plugins]);
 
-  // 回填阶段订阅后端下载进度
-  useEffect(() => {
-    if (step !== 'applying') return;
-    let unlisten: UnlistenFn | undefined;
-    let alive = true;
-    listen<CollectorProgressEvent>('collector-progress', (ev) => {
-      if (!alive) return;
-      const p = ev.payload;
-      if (p.proxy !== undefined && p.proxy !== null) setProxy(p.proxy);
-      else if (p.proxy === null) setProxy(null);
-      const key = `${p.kind}-${p.index}`;
-      const now = performance.now();
-      const prev = speedRef.current.get(key);
-      let speed = 0;
-      if (prev) {
-        const dt = (now - prev.t) / 1000;
-        if (dt > 0) speed = Math.max(0, (p.done - prev.b) / dt);
-      }
-      speedRef.current.set(key, { t: now, b: p.done });
-      setProgress((m) => {
-        const inst = speed;
-        const smoothed = m[key] ? m[key].speed * 0.6 + inst * 0.4 : inst;
-        return {
-          ...m,
-          [key]: {
-            done: p.done,
-            size: p.size ?? m[key]?.size,
-            round: p.round,
-            speed: smoothed,
-          },
-        };
-      });
-    }).then((fn) => {
-      unlisten = fn;
-    });
-    return () => {
-      alive = false;
-      unlisten?.();
-    };
-  }, [step]);
-
-  const selectedPlugin = useMemo(
-    () => plugins.find((p) => p.id === selectedId),
-    [plugins, selectedId],
-  );
+  const selectedPlugin = useMemo(() => plugins.find((p) => p.id === selectedId), [plugins, selectedId]);
 
   const start = async () => {
     setError('');
@@ -324,7 +242,13 @@ export function CollectDialog({
       filters: [{ name: '采集插件', extensions: ['json'] }],
     });
     if (typeof picked !== 'string') return;
-    if (!window.confirm('导入第三方采集插件？插件只包含选择器规则、不执行代码，但仍建议只导入你信任的来源。')) return;
+    if (
+      !(await confirmInfo(
+        '导入第三方采集插件？插件只包含选择器规则、不执行代码，但仍建议只导入你信任的来源。',
+        '导入采集插件',
+      ))
+    )
+      return;
     try {
       const info = await collectorApi.importPlugin(picked);
       setPlugins((prev) => [info, ...prev.filter((p) => p.id !== info.id)]);
@@ -343,29 +267,25 @@ export function CollectDialog({
 
   const confirm = async () => {
     if (!extracted) return;
-    setProgress({});
-    speedRef.current.clear();
-    setProxy(undefined);
-    setStep('applying');
     try {
+      // onApply 只往编辑表单写值，不写库、不下载，因此是瞬时完成的
       await onApply({
         title: title.trim(),
         content: description.trim(),
         thumbnailUrl: useThumb && extracted.thumbnail ? extracted.thumbnail : null,
         imageUrls: extracted.images.filter((_, i) => imgSet.has(i)),
         magnets: extracted.magnets.filter((_, i) => magSet.has(i)),
-        sourceUrl: useSource ? (referer || url.trim()) : null,
+        sourceUrl: useSource ? referer || url.trim() : null,
         referer,
       });
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : '回填失败');
-      setStep('preview');
     }
   };
 
   return (
-    <div className={s.overlay} onClick={(e) => e.target === e.currentTarget && step !== 'applying' && onClose()}>
+    <div className={s.overlay} onClick={(e) => e.target === e.currentTarget && step !== 'loading' && onClose()}>
       <div className={s.dialog}>
         <div className={s.header}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -462,7 +382,11 @@ export function CollectDialog({
                       size="small"
                       appearance="subtle"
                       onClick={() =>
-                        setImgSet(imgSet.size === extracted.images.length ? new Set() : new Set(extracted.images.map((_, i) => i)))
+                        setImgSet(
+                          imgSet.size === extracted.images.length
+                            ? new Set()
+                            : new Set(extracted.images.map((_, i) => i)),
+                        )
                       }
                     >
                       {imgSet.size === extracted.images.length ? '全不选' : '全选'}
@@ -492,7 +416,11 @@ export function CollectDialog({
                       size="small"
                       appearance="subtle"
                       onClick={() =>
-                        setMagSet(magSet.size === extracted.magnets.length ? new Set() : new Set(extracted.magnets.map((_, i) => i)))
+                        setMagSet(
+                          magSet.size === extracted.magnets.length
+                            ? new Set()
+                            : new Set(extracted.magnets.map((_, i) => i)),
+                        )
                       }
                     >
                       {magSet.size === extracted.magnets.length ? '全不选' : '全选'}
@@ -528,28 +456,16 @@ export function CollectDialog({
                   label="把采集网址作为「链接」类型附件"
                 />
               </div>
-            </>
-          )}
 
-          {step === 'applying' && extracted && (
-            <ProgressPanel
-              proxy={proxy}
-              rows={[
-                ...(useThumb && extracted.thumbnail
-                  ? [{ key: 'cover-0', label: '封面图' }]
-                  : []),
-                ...extracted.images
-                  .map((_, i) => i)
-                  .filter((i) => imgSet.has(i))
-                  .map((_, order) => ({ key: `image-${order}`, label: `图集 ${order + 1}` })),
-              ]}
-              progress={progress}
-            />
+              <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
+                封面与图集只登记远程地址，会在<b>保存文章时</b>才下载到本地并显示进度。
+              </span>
+            </>
           )}
         </div>
 
         <div className={s.footer}>
-          <Button appearance="subtle" onClick={onClose} disabled={step === 'applying' || step === 'loading'}>
+          <Button appearance="subtle" onClick={onClose} disabled={step === 'loading'}>
             取消
           </Button>
           {step === 'preview' && (
@@ -561,13 +477,7 @@ export function CollectDialog({
                 appearance="primary"
                 icon={<ArrowDownloadRegular />}
                 onClick={confirm}
-                disabled={
-                  !title.trim() &&
-                  !useThumb &&
-                  imgSet.size === 0 &&
-                  magSet.size === 0 &&
-                  !useSource
-                }
+                disabled={!title.trim() && !useThumb && imgSet.size === 0 && magSet.size === 0 && !useSource}
               >
                 确认回填
               </Button>
@@ -614,71 +524,5 @@ function RemoteImg({ src, className }: { src: string; className: string }) {
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
     />
-  );
-}
-
-function fmtBytes(n: number): string {
-  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(2)}MB`;
-  if (n >= 1024) return `${(n / 1024).toFixed(1)}KB`;
-  return `${n}B`;
-}
-
-function ProgressPanel({
-  proxy,
-  rows,
-  progress,
-}: {
-  proxy: string | null | undefined;
-  rows: { key: string; label: string }[];
-  progress: Record<string, TaskProgress>;
-}) {
-  const s = useStyles();
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '4px 0' }}>
-      <div
-        className={s.proxyBanner}
-        style={{
-          background: proxy === undefined ? 'var(--colorNeutralBackground3)' : proxy ? 'var(--colorPaletteGreenBackground2)' : 'var(--colorPaletteRedBackground2)',
-          color: proxy === undefined ? 'var(--colorNeutralForeground3)' : undefined,
-        }}
-      >
-        {proxy === undefined && '正在建立连接…'}
-        {proxy === null && (
-          <>
-            ⚠ 未检测到系统代理，当前为<b>直连</b>。浏览器能秒开而这里很慢，通常是 Clash 只开了浏览器代理/已关闭
-            ——请在 Clash 中打开「系统代理」后重试（TUN 模式可忽略此提示）
-          </>
-        )}
-        {proxy && <>网络出口：系统代理 <b>{proxy}</b></>}
-      </div>
-
-      {rows.map(({ key, label }) => {
-        const t = progress[key];
-        const pct = t?.size ? Math.min(100, Math.round((t.done / t.size) * 100)) : undefined;
-        return (
-          <div key={key} className={s.taskRow}>
-            <div className={s.taskLine}>
-              <span>{label}</span>
-              <span style={{ color: 'var(--colorNeutralForeground3)' }}>
-                {!t
-                  ? '排队中…'
-                  : `${fmtBytes(t.done)}${t.size ? ` / ${fmtBytes(t.size)}` : ''}${
-                      pct !== undefined ? ` · ${pct}%` : ''
-                    } · ${fmtBytes(t.speed)}/s${t.round > 0 ? ` · 续传第 ${t.round + 1} 次` : ''}`}
-              </span>
-            </div>
-            <div className={s.barTrack}>
-              <div
-                className={s.barFill}
-                style={{ width: pct !== undefined ? `${pct}%` : t ? '100%' : '0%', opacity: pct === undefined ? 0.35 : 1 }}
-              />
-            </div>
-          </div>
-        );
-      })}
-      <span style={{ fontSize: '11px', color: 'var(--colorNeutralForeground3)' }}>
-        单张图片 30 秒无数据才会超时并重试，慢而不断会持续下载，请勿关闭窗口
-      </span>
-    </div>
   );
 }

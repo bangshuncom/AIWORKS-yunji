@@ -1,48 +1,23 @@
 // 编辑页：拖拽排序附件与图集、上传/删除文件
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  arrayMove,
-  useSortable,
-  verticalListSortingStrategy,
-  horizontalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { arrayMove } from '@dnd-kit/sortable';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   Card,
-  Input,
   Button,
-  Label,
-  Textarea,
   Dropdown,
+  Input,
+  Label,
   Option,
-  Badge,
   Spinner,
   MessageBar,
   MessageBarBody,
-  makeStyles,
-  tokens,
 } from '@fluentui/react-components';
-import {
-  ArrowLeftRegular,
-  DeleteRegular,
-  ArrowUploadRegular,
-  ReOrderDotsVerticalRegular,
-  AddCircleRegular,
-  GlobeRegular,
-} from '@fluentui/react-icons';
+import { ArrowLeftRegular, DeleteRegular, ArrowUploadRegular, GlobeRegular } from '@fluentui/react-icons';
 import {
   resourceApi,
   imageApi,
@@ -59,147 +34,27 @@ import {
 import type { CreateItem, Resource, Tag, Image, Collection, Category, AuthorInfo } from '../types/models';
 import { usePerms } from '../hooks/usePerms';
 import { useAuthStore } from '../stores/authStore';
-import { MarkdownEditor } from '../components/MarkdownEditor';
 import { CategoryTreeSelect } from '../components/CategoryTreeSelect';
 import { CollectDialog } from '../components/CollectDialog';
 import type { CollectApplyPayload } from '../components/CollectDialog';
 
-const useStyles = makeStyles({
-  container: { display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '900px' },
-  toolbar: { display: 'flex', alignItems: 'center', gap: '8px' },
-  field: { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' },
-  row: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
-  itemBlock: {
-    padding: '12px',
-    borderRadius: '8px',
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    backgroundColor: tokens.colorNeutralBackground1,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  itemHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '8px',
-  },
-  thumbRow: { display: 'flex', gap: '12px', alignItems: 'center' },
-  thumb: { width: '120px', height: '90px', objectFit: 'cover', borderRadius: '6px', backgroundColor: tokens.colorNeutralBackground3 },
-  gallery: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
-  galleryItem: {
-    position: 'relative',
-    width: '120px',
-    height: '90px',
-  },
-  galleryImg: { width: '100%', height: '100%', objectFit: 'cover', borderRadius: '6px', cursor: 'move' },
-  galleryPending: {
-    position: 'absolute',
-    left: '2px',
-    bottom: '2px',
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    color: '#fff',
-    fontSize: '10px',
-    padding: '1px 6px',
-    borderRadius: '6px',
-    pointerEvents: 'none',
-  },
-  galleryDelete: {
-    position: 'absolute',
-    top: '2px',
-    right: '2px',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '50%',
-    width: '20px',
-    height: '20px',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '12px',
-  },
-  tagPills: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' },
-});
-
-interface EditItem extends CreateItem {
-  _id: string; // 临时 ID，用于 dnd-kit
-  _isNew?: boolean;
-  /** 选中但尚未上传的本地文件路径，保存时才真正上传 */
-  localFilePath?: string;
-}
-
-interface EditImage {
-  id: number | string;
-  file_path: string;
-  /** 新建/未保存时选中的本地文件路径，保存时才真正上传 */
-  localPath?: string;
-}
-
-const genId = () => Math.random().toString(36).slice(2, 11);
-
-const ITEM_TYPES = [
-  { value: 'link', label: '🔗 链接' },
-  { value: 'ed2k', label: '🔌 eD2K' },
-  { value: 'magnet_torrent', label: '🧲 磁力种子' },
-  { value: 'file', label: '📁 附件文件' },
-  { value: 'direct_link', label: '🔗 文件直链' },
-];
-
-// 可排序的附件项
-function SortableItem({ item, children }: { item: EditItem; children: React.ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item._id });
-  return (
-    <div
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.5 : 1,
-      }}
-      {...attributes}
-    >
-      {children}
-      <button
-        {...listeners}
-        style={{ cursor: 'grab', border: 'none', background: 'transparent', padding: '4px' }}
-        title="拖动排序"
-      >
-        <ReOrderDotsVerticalRegular />
-      </button>
-    </div>
-  );
-}
-
-// 可排序的图集项
-function SortableImage({ img, onDelete }: { img: EditImage; onDelete: () => void }) {
-  const styles = useStyles();
-  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: String(img.id) });
-  return (
-    <div
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.5 : 1,
-      }}
-      className={styles.galleryItem}
-    >
-      <img
-        src={img.localPath ? convertFileSrc(img.localPath) : assetUrl(img.file_path)}
-        className={styles.galleryImg}
-        alt=""
-        title={img.localPath ? '保存时上传' : ''}
-        {...listeners}
-      />
-      {img.localPath && <span className={styles.galleryPending}>待保存</span>}
-      <button className={styles.galleryDelete} onClick={onDelete}>
-        ×
-      </button>
-    </div>
-  );
-}
+import { BasicInfoCard } from '../components/editor/BasicInfoCard';
+import { ItemsCard } from '../components/editor/ItemsCard';
+import { GalleryCard } from '../components/editor/GalleryCard';
+import { PillPicker, type PillOption } from '../components/editor/PillPicker';
+import {
+  useStyles,
+  CARD_STYLE,
+  THUMB_ACTION_STYLE,
+  genId,
+  isPendingImage,
+  normalizeTagInput,
+  type EditItem,
+  type EditImage,
+} from '../components/editor/shared';
+import { SaveProgressDialog, useImageDownloadProgress, type ProgressRow } from '../components/editor/ImageProgress';
+import { errorText } from '../lib/errors';
+import { invalidateArticleData } from '../lib/invalidate';
 
 export function EditPage() {
   const styles = useStyles();
@@ -216,6 +71,10 @@ export function EditPage() {
   const [content, setContent] = useState('');
   const [readLevel, setReadLevel] = useState(0);
   const [accessPassword, setAccessPassword] = useState('');
+  // 服务端记录的密码状态：是否已设置（不回传密码本身）
+  const [hasPassword, setHasPassword] = useState(false);
+  // 本次保存是否清除访问密码
+  const [clearPassword, setClearPassword] = useState(false);
   const [thumbnailPath, setThumbnailPath] = useState('');
   // 管理员马甲：可选其他用户身份发布
   const isAdmin = usePerms().isAdmin;
@@ -228,6 +87,14 @@ export function EditPage() {
   });
   // 选中但尚未上传的本地封面（保存时才上传）
   const [pendingThumbnail, setPendingThumbnail] = useState<string | null>(null);
+  // 采集回填的远程封面：仅登记地址，保存时才下载本地化
+  const [pendingRemoteThumb, setPendingRemoteThumb] = useState<{ url: string; referer: string } | null>(null);
+  // 保存期间是否正在下载远程图片（用于显示进度并挡住表单）
+  const [savingRemote, setSavingRemote] = useState(false);
+  // 下载开始时快照的进度行（下载途中 pendingRemoteThumb 会被清空，不能用实时值渲染）
+  const [savingRows, setSavingRows] = useState<ProgressRow[]>([]);
+  // 远程图片下载进度（订阅后端 collector-progress）
+  const imgProgress = useImageDownloadProgress();
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [newTagNames, setNewTagNames] = useState('');
   const [collectionIds, setCollectionIds] = useState<number[]>([]);
@@ -239,14 +106,13 @@ export function EditPage() {
   const [collectOpen, setCollectOpen] = useState(false);
 
   // 拖拽传感器
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  const { data: resource } = useQuery<Resource>({
+  const { data: resource, error: loadError } = useQuery<Resource>({
     queryKey: ['resource', ridNum],
     queryFn: () => resourceApi.get(ridNum),
     enabled: isEdit,
+    retry: false,
   });
 
   const { data: images } = useQuery<Image[]>({
@@ -264,6 +130,10 @@ export function EditPage() {
     queryKey: ['collections'],
     queryFn: collectionApi.list,
   });
+  const collectionOptions = useMemo<PillOption[]>(
+    () => (collections ?? []).map((c) => ({ id: c.id, label: c.title, count: c.resource_count })),
+    [collections],
+  );
   const { data: categoriesTree } = useQuery<Category[]>({
     queryKey: ['categories-tree'],
     queryFn: categoryApi.listTree,
@@ -275,7 +145,7 @@ export function EditPage() {
       setDescription(resource.description);
       setContent(resource.content);
       setReadLevel(resource.read_level ?? 0);
-      setAccessPassword(resource.access_password);
+      setHasPassword(!!resource.has_password);
       setThumbnailPath(resource.thumbnail_path);
       setAuthorId(resource.user_id ?? null);
       setTagIds(resource.tags?.map((t) => t.id) ?? []);
@@ -297,7 +167,13 @@ export function EditPage() {
 
   useEffect(() => {
     if (isEdit && images && loaded) {
-      setGallery(images.map((im) => ({ id: im.id, file_path: im.file_path })));
+      // 以服务端为准，但保留尚未落库的项（本地待上传 / 远程未下载成功），
+      // 否则保存后的一次 refetch 会把「待本地化」的图从界面上抹掉，用户就没法重试了
+      setGallery((prev) => {
+        const pending = prev.filter(isPendingImage);
+        const server = images.map((im) => ({ id: im.id, file_path: im.file_path }));
+        return pending.length > 0 ? [...server, ...pending] : server;
+      });
     }
   }, [isEdit, images, loaded]);
 
@@ -319,49 +195,20 @@ export function EditPage() {
     return Array.isArray(selected) ? selected : [selected];
   };
 
-  // 确保资源已保存（新建模式下先保存获取 rid），返回 rid
-  const ensureSaved = async (): Promise<number> => {
-    if (isEdit) return ridNum;
-    if (!title.trim()) {
-      throw new Error('请先填写标题再上传内容');
-    }
-    // 新建模式：先保存资源
-    const submitItems = await prepareItems();
-    if (submitItems === null) throw new Error('附件校验失败');
-    const resolvedTagIds = await resolveTagIds();
-    const payload = {
-      title: title.trim(),
-      description: description.trim(),
-      content: content.trim(),
-      read_level: readLevel,
-      access_password: accessPassword,
-      thumbnail_path: thumbnailPath,
-      tag_ids: resolvedTagIds,
-      collection_ids: collectionIds,
-      category_id: categoryId,
-      items: submitItems,
-      author_id: isAdmin && authorId != null && authorId !== currentUserId ? authorId : undefined,
-    };
-    const newId = await resourceApi.create(payload);
-    // 切换到编辑模式但不刷新页面
-    setCurrentRid(newId);
-    setLoaded(true);
-    // 更新 URL（不触发导航刷新）
-    window.history.replaceState({}, '', `/edit/${newId}`);
-    queryClient.invalidateQueries({ queryKey: ['resource', newId] });
-    queryClient.invalidateQueries({ queryKey: ['resource-images', newId] });
-    return newId;
-  };
-
-  // 选择封面：仅本地暂存预览，保存时才上传
+  // 选择封面：仅本地暂存预览，保存时才上传（会顶掉采集来的远程封面）
   const uploadThumbnail = async () => {
     const filePath = await pickFile(['jpg', 'jpeg', 'png', 'webp']);
     if (!filePath) return;
+    setPendingRemoteThumb(null);
     setPendingThumbnail(filePath);
   };
 
   const clearThumbnail = async () => {
-    // 先清除本地暂存
+    // 先清除「尚未落库」的暂存封面（本地文件 / 采集来的远程地址）
+    if (pendingRemoteThumb) {
+      setPendingRemoteThumb(null);
+      return;
+    }
     if (pendingThumbnail) {
       setPendingThumbnail(null);
       return;
@@ -390,8 +237,8 @@ export function EditPage() {
   };
 
   const deleteGalleryImage = async (img: EditImage) => {
-    // 本地暂存图：直接从列表移除即可
-    if (img.localPath) {
+    // 尚未落库的图（本地待上传 / 远程待本地化）：直接从列表移除即可
+    if (isPendingImage(img)) {
       setGallery((g) => g.filter((im) => im.id !== img.id));
       return;
     }
@@ -408,10 +255,7 @@ export function EditPage() {
   const uploadContentAsset = async (kind: 'image' | 'file') => {
     const selected = await openDialog({
       multiple: false,
-      filters:
-        kind === 'image'
-          ? [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }]
-          : undefined,
+      filters: kind === 'image' ? [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }] : undefined,
     });
     if (typeof selected !== 'string') return null;
     const name = selected.split(/[\\/]/).pop() || 'file';
@@ -532,7 +376,7 @@ export function EditPage() {
 
   // 批量创建新标签，返回合并后的 tag_ids
   const resolveTagIds = async (): Promise<number[]> => {
-    const names = newTagNames
+    const names = normalizeTagInput(newTagNames)
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
@@ -556,13 +400,17 @@ export function EditPage() {
     return Array.from(merged);
   };
 
-  // 网页采集回填
+  // 网页采集回填：只往表单写值——不落库、不下载图片。
+  // 这样在采集弹窗里反复预览/取消都不会留下半成品文章，也为「保存是唯一落库点」这条规则兜底。
   const handleCollectApply = async (p: CollectApplyPayload) => {
-    const targetId = await ensureSaved();
-
-    if (p.title) setTitle(p.title);
+    // 页面没提取到标题、表单也空时，保存必然失败（保存按钮也依赖标题），提前给出指引
+    const nextTitle = p.title.trim() || title.trim();
+    if (!nextTitle) {
+      throw new Error('未能从该页面提取到标题：请先在「标题」一栏填写，再点确认回填');
+    }
+    setTitle(nextTitle);
     // 游戏简介写入文章正文（已有正文时不覆盖）
-    if (p.content) setContent((prev) => (prev.trim() ? prev : p.content));
+    if (p.content && !content.trim()) setContent(p.content);
 
     // 磁力 + 来源链接写入附件（按内容去重）
     if (p.sourceUrl || p.magnets.length > 0) {
@@ -597,39 +445,26 @@ export function EditPage() {
       });
     }
 
-    // 封面与图集并行下载（图床较慢，总耗时取两者较长者）
-    const tasks: Promise<string | null>[] = [];
-
+    // 封面：登记为「待本地化」（保存时才下载），保留防盗链所需的 Referer
     if (p.thumbnailUrl) {
-      tasks.push(
-        collectorApi
-          .setThumbnail(targetId, p.thumbnailUrl, p.referer)
-          .then((savedPath) => {
-            setThumbnailPath(savedPath);
-            queryClient.invalidateQueries({ queryKey: ['resource', targetId] });
-            return null;
-          })
-          .catch((e: Error) => `封面下载失败：${e.message}`),
-      );
+      setPendingRemoteThumb({ url: p.thumbnailUrl, referer: p.referer });
     }
 
+    // 图集：同样只登记远程地址，并按地址去重（重复采集同一页不会重复添加）
     if (p.imageUrls.length > 0) {
-      tasks.push(
-        collectorApi
-          .addImages(targetId, p.imageUrls, p.referer)
-          .then((res) => {
-            setGallery((g) => [...g, ...res.images.map((im) => ({ id: im.id, file_path: im.file_path }))]);
-            queryClient.invalidateQueries({ queryKey: ['resource-images', targetId] });
-            return res.failed.length > 0
-              ? `${res.failed.length} 张图片下载失败：${res.failed.map((f) => f.error).join('；')}`
-              : null;
-          })
-          .catch((e: Error) => `图集下载失败：${e.message}`),
-      );
+      setGallery((g) => {
+        const have = new Set(g.map((im) => im.remoteUrl).filter((u): u is string => !!u));
+        const add: EditImage[] = p.imageUrls
+          .filter((u) => !have.has(u))
+          .map((u) => ({
+            id: `remote_${genId()}`,
+            file_path: '',
+            remoteUrl: u,
+            remoteReferer: p.referer,
+          }));
+        return add.length > 0 ? [...g, ...add] : g;
+      });
     }
-
-    const problems = (await Promise.all(tasks)).filter((m): m is string => !!m);
-    if (problems.length > 0) setError(problems.join('；'));
   };
 
   // 保存
@@ -654,7 +489,9 @@ export function EditPage() {
       }
       setContent(finalContent);
 
-      // 3. 新建：先创建文章拿到 id（封面/图集随后上传）
+      // 3. 新建：创建文章拿到 id。
+      // 这是全流程唯一的落库点——采集回填、选本地图都不建文章，因此这里也是
+      // 「封面/图集需要 rid」这一依赖成立的地方。
       let savedId = ridNum;
       if (!isEdit) {
         savedId = await resourceApi.create({
@@ -663,8 +500,9 @@ export function EditPage() {
           content: finalContent.trim(),
           read_level: readLevel,
           access_password: accessPassword,
-          // 有本地待传封面时先留空，上传后由 setResourceThumbnail 写回
-          thumbnail_path: pendingThumbnail ? '' : thumbnailPath,
+          clear_password: clearPassword || undefined,
+          // 有待传封面（本地文件或远程地址）时先留空，处理完成后写回
+          thumbnail_path: pendingThumbnail || pendingRemoteThumb ? '' : thumbnailPath,
           tag_ids: resolvedTagIds,
           collection_ids: collectionIds,
           category_id: categoryId,
@@ -674,7 +512,7 @@ export function EditPage() {
         setCurrentRid(savedId);
       }
 
-      // 4. 上传本地暂存的封面
+      // 4. 封面：本地暂存文件上传
       let finalThumbnail = thumbnailPath;
       if (pendingThumbnail) {
         finalThumbnail = await imageApi.setResourceThumbnail(savedId, pendingThumbnail);
@@ -682,31 +520,81 @@ export function EditPage() {
         setPendingThumbnail(null);
       }
 
-      // 5. 上传本地暂存的图集图片（保留当前显示顺序），得到 临时id -> 真实id 映射
-      const idMap = new Map<string, number>();
-      const pending = gallery.filter((im) => im.localPath);
+      // 5. 图集：本地暂存图片上传（并发）。临时 id -> 真实 id / 相对路径
+      const resolved = new Map<string, { realId: number; filePath: string }>();
+      const localPending = gallery.filter((im) => im.localPath);
       const uploaded = await Promise.all(
-        pending.map(async (im) => {
+        localPending.map(async (im) => {
           const r = await imageApi.uploadResourceImage(savedId, im.localPath!);
           return { tempId: String(im.id), realId: r.id, filePath: r.file_path };
         }),
       );
-      for (const u of uploaded) idMap.set(u.tempId, u.realId);
-      if (uploaded.length > 0) {
+      for (const u of uploaded) resolved.set(u.tempId, { realId: u.realId, filePath: u.filePath });
+
+      // 6. 远程封面/图集：此刻才下载本地化（图床慢，全程推送进度）
+      const problems: string[] = [];
+      const remoteGallery = gallery.filter((im) => im.remoteUrl);
+      const rows: ProgressRow[] = [
+        ...(pendingRemoteThumb ? [{ key: 'cover-0', label: '封面图' }] : []),
+        ...remoteGallery.map((_, i) => ({ key: `image-${i}`, label: `图集 ${i + 1}` })),
+      ];
+      if (rows.length > 0) {
+        setSavingRows(rows);
+        imgProgress.reset();
+        setSavingRemote(true);
+        try {
+          await imgProgress.track(async () => {
+            if (pendingRemoteThumb) {
+              try {
+                const saved = await collectorApi.setThumbnail(
+                  savedId,
+                  pendingRemoteThumb.url,
+                  pendingRemoteThumb.referer,
+                );
+                finalThumbnail = saved;
+                setThumbnailPath(saved);
+                setPendingRemoteThumb(null);
+              } catch (e) {
+                problems.push(`封面下载失败：${errorText(e) || '未知错误'}`);
+              }
+            }
+            if (remoteGallery.length > 0) {
+              try {
+                const res = await collectorApi.addImages(
+                  savedId,
+                  remoteGallery.map((im) => im.remoteUrl!),
+                  remoteGallery[0].remoteReferer ?? '',
+                );
+                // 后端按来源地址回传结果，据此把占位项换成真实记录
+                for (const im of res.images) {
+                  const hit = remoteGallery.find((g) => g.remoteUrl === im.source_url);
+                  if (hit) resolved.set(String(hit.id), { realId: im.id, filePath: im.file_path });
+                }
+                for (const f of res.failed) problems.push(`${f.url} 下载失败：${f.error}`);
+              } catch (e) {
+                problems.push(`图集下载失败：${errorText(e) || '未知错误'}`);
+              }
+            }
+          });
+        } finally {
+          setSavingRemote(false);
+        }
+      }
+
+      // 7. 把已落库的项写回列表（失败项保持「待本地化」，下次保存会重试）
+      if (resolved.size > 0) {
         setGallery((g) =>
           g.map((im) => {
-            const realId = idMap.get(String(im.id));
-            return realId != null
-              ? { id: realId, file_path: uploaded.find((u) => u.realId === realId)!.filePath }
-              : im;
+            const r = resolved.get(String(im.id));
+            return r ? { id: r.realId, file_path: r.filePath } : im;
           }),
         );
       }
 
-      // 6. 按当前顺序提交排序
-      const orderedIds = gallery.map((im) =>
-        im.localPath ? idMap.get(String(im.id))! : Number(im.id),
-      );
+      // 8. 按当前显示顺序提交排序（只提交已落库的项，未成功的不参与）
+      const orderedIds = gallery
+        .map((im) => resolved.get(String(im.id))?.realId ?? (typeof im.id === 'number' ? im.id : NaN))
+        .filter((n) => Number.isFinite(n));
       if (orderedIds.length > 0) {
         await imageApi.reorderResourceImages(savedId, orderedIds);
       }
@@ -715,15 +603,11 @@ export function EditPage() {
       // 图集也没有则取正文 Markdown 首图（正文图片已在步骤 2 上传为相对路径）
       if (!finalThumbnail) {
         const firstGallery = gallery.find((im) => {
-          const realId = idMap.get(String(im.id));
-          return realId != null || !im.localPath;
+          const r = resolved.get(String(im.id));
+          return r != null || typeof im.id === 'number';
         });
         if (firstGallery) {
-          // 本地刚上传的图查映射结果；已有图直接用 file_path
-          const realId = idMap.get(String(firstGallery.id));
-          finalThumbnail = realId != null
-            ? uploaded.find((u) => u.realId === realId)!.filePath
-            : firstGallery.file_path;
+          finalThumbnail = resolved.get(String(firstGallery.id))?.filePath ?? firstGallery.file_path;
         } else {
           const m = finalContent.match(/!\[[^\]]*\]\(([^)\s]+)\)/);
           if (m && !/^https?:\/\//i.test(m[1]) && !m[1].startsWith('__pending__')) {
@@ -733,14 +617,15 @@ export function EditPage() {
         if (finalThumbnail) setThumbnailPath(finalThumbnail);
       }
 
-      // 7. 编辑已有文章，或新建时带封面/回退出封面：更新正文等字段
-      if (isEdit || pendingThumbnail || finalThumbnail) {
+      // 9. 编辑已有文章，或新建时带封面/回退出封面：更新正文等字段
+      if (isEdit || pendingThumbnail || pendingRemoteThumb || finalThumbnail) {
         await resourceApi.update(savedId, {
           title: title.trim(),
           description: description.trim(),
           content: finalContent.trim(),
           read_level: readLevel,
           access_password: accessPassword,
+          clear_password: clearPassword || undefined,
           thumbnail_path: finalThumbnail,
           tag_ids: resolvedTagIds,
           collection_ids: collectionIds,
@@ -749,41 +634,50 @@ export function EditPage() {
           author_id: isAdmin && authorId != null && authorId !== currentUserId ? authorId : undefined,
         });
       }
-      return savedId;
+      return { savedId, problems };
     },
-    onSuccess: (savedId) => {
-      queryClient.invalidateQueries({ queryKey: ['resources'] });
-      queryClient.invalidateQueries({ queryKey: ['resource', savedId ?? ridNum] });
-      queryClient.invalidateQueries({ queryKey: ['resource-images', savedId ?? ridNum] });
+    onSuccess: (res) => {
+      // prepareItems 校验失败会提前中止（错误提示已由校验函数给出）
+      if (!res) return;
+      const { savedId, problems } = res;
+      // 分类/合集/作者的计数都随本篇变化，统一失效（单靠 ['resources'] 不会刷新导航计数）
+      invalidateArticleData(queryClient);
+      queryClient.invalidateQueries({ queryKey: ['resource', savedId] });
+      queryClient.invalidateQueries({ queryKey: ['resource-images', savedId] });
       queryClient.invalidateQueries({ queryKey: ['tags'] });
-      navigate(`/detail/${savedId ?? ridNum}`);
+      // 有图片没能本地化时留在编辑页：失败项仍是「待本地化」，再点一次保存即可重试
+      if (problems.length > 0) {
+        setError(`已保存，但图片未能全部本地化：${problems.join('；')}`);
+        return;
+      }
+      navigate(`/detail/${savedId}`);
     },
     onError: (e: Error) => setError(e.message || '保存失败'),
   });
 
+  // 取数失败（如无阅读权限）时不要一直转圈
   if (isEdit && !loaded) {
+    if (loadError) {
+      return (
+        <MessageBar intent="error">
+          <MessageBarBody>{errorText(loadError) || '加载文章失败'}</MessageBarBody>
+        </MessageBar>
+      );
+    }
     return <Spinner label="加载中..." />;
   }
 
   return (
     <div className={styles.container}>
       <div className={styles.toolbar}>
-        <Button
-          appearance="subtle"
-          icon={<ArrowLeftRegular />}
-          onClick={() => navigate(-1)}
-        >
+        <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => navigate(-1)}>
           返回
         </Button>
         <div style={{ display: 'flex', gap: '8px' }}>
           <Button icon={<GlobeRegular />} onClick={() => setCollectOpen(true)}>
             网页采集
           </Button>
-          <Button
-            appearance="primary"
-            onClick={() => saveMut.mutate()}
-            disabled={saveMut.isPending || !title.trim()}
-          >
+          <Button appearance="primary" onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !title.trim()}>
             {saveMut.isPending ? '保存中...' : '保存'}
           </Button>
         </div>
@@ -795,373 +689,227 @@ export function EditPage() {
         </MessageBar>
       )}
 
-      {/* 基本信息 */}
-      <Card style={{ padding: '16px' }}>
-        <div className={styles.field}>
-          <Label htmlFor="title">标题 *</Label>
-          <Input id="title" value={title} onChange={(_, d) => setTitle(d.value)} />
-        </div>
-        <div className={styles.field}>
-          <Label htmlFor="desc">描述</Label>
-          <Textarea
-            id="desc"
-            value={description}
-            onChange={(_, d) => setDescription(d.value)}
-            rows={2}
-          />
-        </div>
-        <div className={styles.field}>
-          <Label>正文（Markdown）</Label>
-          <MarkdownEditor
-            value={content}
-            onChange={setContent}
-            height={480}
-            placeholder="在此输入 Markdown 正文..."
-            upload={uploadContentAsset}
-          />
-        </div>
-        <div className={styles.row}>
+      <BasicInfoCard
+        values={{ title, description, content, tagIds, newTagNames }}
+        onChange={(p) => {
+          if (p.title !== undefined) setTitle(p.title);
+          if (p.description !== undefined) setDescription(p.description);
+          if (p.content !== undefined) setContent(p.content);
+          if (p.tagIds !== undefined) setTagIds(p.tagIds);
+          if (p.newTagNames !== undefined) setNewTagNames(p.newTagNames);
+        }}
+        tags={tags}
+        uploadContentAsset={uploadContentAsset}
+      />
+
+      {/* 元数据：缩略图在最前，右列自上而下为 阅读权限 / 马甲 → 分类 / 访问密码 → 合集 */}
+      <Card style={CARD_STYLE}>
+        <div className={styles.metaGrid}>
           <div className={styles.field}>
-            <Label>阅读权限</Label>
-            <Dropdown
-              value={readLevel === 0 ? '0 - 公开（无需登录）' : `${readLevel} - 需权限 ${readLevel} 及以上`}
-              selectedOptions={[String(readLevel)]}
-              onOptionSelect={(_, d) => { if (d.optionValue) setReadLevel(Number(d.optionValue)); }}
-            >
-              <Option value="0" text="0 - 公开（无需登录）">0 - 公开（无需登录）</Option>
-              <Option value="1" text="1 - 需权限 1 及以上">1 - 需权限 1 及以上</Option>
-              <Option value="2" text="2 - 需权限 2 及以上">2 - 需权限 2 及以上</Option>
-              <Option value="3" text="3 - 需权限 3 及以上">3 - 需权限 3 及以上</Option>
-              <Option value="4" text="4 - 需权限 4 及以上">4 - 需权限 4 及以上</Option>
-              <Option value="5" text="5 - 需权限 5（默认仅管理员）">5 - 需权限 5（默认仅管理员）</Option>
-            </Dropdown>
+            <Label>
+              缩略图
+              {pendingThumbnail ? '（保存后上传）' : pendingRemoteThumb ? '（保存后从远程下载）' : ''}
+            </Label>
+            <div className={styles.thumbBox}>
+              {pendingThumbnail || pendingRemoteThumb || thumbnailPath ? (
+                <img
+                  className={styles.thumb}
+                  src={
+                    pendingThumbnail
+                      ? convertFileSrc(pendingThumbnail)
+                      : pendingRemoteThumb
+                        ? pendingRemoteThumb.url
+                        : assetUrl(thumbnailPath)
+                  }
+                  alt="缩略图"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className={styles.thumbEmpty}>无</div>
+              )}
+              <div className={styles.thumbActions}>
+                <Button
+                  appearance="outline"
+                  size="small"
+                  style={THUMB_ACTION_STYLE}
+                  icon={<ArrowUploadRegular />}
+                  onClick={uploadThumbnail}
+                >
+                  {pendingThumbnail || pendingRemoteThumb ? '选择' : '上传'}
+                </Button>
+                {(pendingThumbnail || pendingRemoteThumb || thumbnailPath) && (
+                  <Button
+                    appearance="subtle"
+                    size="small"
+                    style={THUMB_ACTION_STYLE}
+                    icon={<DeleteRegular />}
+                    onClick={clearThumbnail}
+                  >
+                    清除
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
-          {isAdmin && (
-            <div className={styles.field}>
-              <Label>发布身份（马甲）</Label>
-              <Dropdown
-                value={
-                  authorId == null ? '当前账号'
-                  : authors?.find((a) => a.id === authorId)
-                    ? `${authors.find((a) => a.id === authorId)!.nickname || authors.find((a) => a.id === authorId)!.username}`
-                    : `用户 #${authorId}`
-                }
-                selectedOptions={[String(authorId ?? 'me')]}
-                onOptionSelect={(_, d) => {
-                  const v = d.optionValue;
-                  setAuthorId(v === 'me' ? null : Number(v));
-                }}
-              >
-                <Option value="me" text="当前账号">当前账号</Option>
-                {authors?.map((a) => (
-                  <Option key={a.id} value={String(a.id)} text={a.nickname || a.username}>
-                    {a.nickname || a.username}
+
+          <div className={styles.metaFields}>
+            {/* 阅读权限与马甲同属「谁能看到这篇」，并排放在最上方 */}
+            <div className={styles.row}>
+              <div className={styles.field}>
+                <Label>阅读权限</Label>
+                <Dropdown
+                  value={readLevel === 0 ? '0 - 公开（无需登录）' : `${readLevel} - 需权限 ${readLevel} 及以上`}
+                  selectedOptions={[String(readLevel)]}
+                  onOptionSelect={(_, d) => {
+                    if (d.optionValue) setReadLevel(Number(d.optionValue));
+                  }}
+                >
+                  <Option value="0" text="0 - 公开（无需登录）">
+                    0 - 公开（无需登录）
                   </Option>
-                ))}
-              </Dropdown>
-            </div>
-          )}
-        </div>
-        <div className={styles.field}>
-          <Label htmlFor="pwd">访问密码（留空则不限制）</Label>
-          <Input
-            id="pwd"
-            type="password"
-            value={accessPassword}
-            onChange={(_, d) => setAccessPassword(d.value)}
-          />
-          <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-            {readLevel > 0 && !accessPassword
-              ? `提示：需要权限 ${readLevel} 级及以上的用户才能查看`
-              : readLevel === 0 && !accessPassword
-              ? '提示：公开且不设密码 = 任何人（包括未登录用户）均可访问'
-              : accessPassword
-              ? '已设置访问密码，凭密码可访问'
-              : ''}
-          </span>
-        </div>
-        {/* 标签 */}
-        <div className={styles.field}>
-          <Label>标签</Label>
-          <Dropdown
-            multiselect
-            placeholder="选择已有标签"
-            selectedOptions={tagIds.map(String)}
-            onOptionSelect={(_, d) => {
-              const vals = d.selectedOptions ?? [];
-              setTagIds(vals.map(Number));
-            }}
-          >
-            {tags?.map((t) => (
-              <Option key={t.id} value={String(t.id)} text={`${t.name} (${t.count ?? 0})`}>
-                {t.name} ({t.count ?? 0})
-              </Option>
-            ))}
-          </Dropdown>
-          <Input
-            placeholder="新增标签，逗号分隔（保存时自动创建）"
-            value={newTagNames}
-            onChange={(_, d) => setNewTagNames(d.value)}
-            style={{ marginTop: '4px' }}
-          />
-          {tagIds.length > 0 && (
-            <div className={styles.tagPills}>
-              {tagIds.map((tid) => {
-                const t = tags?.find((x) => x.id === tid);
-                return t ? (
-                  <Badge key={tid} appearance="filled" color="informative">{t.name}</Badge>
-                ) : null;
-              })}
-            </div>
-          )}
-        </div>
-        {/* 合集（自定义分类） */}
-        <div className={styles.field} style={{ marginBottom: 0 }}>
-          <Label>合集</Label>
-          <Dropdown
-            multiselect
-            placeholder="选择合集"
-            selectedOptions={collectionIds.map(String)}
-            onOptionSelect={(_, d) => {
-              const vals = d.selectedOptions ?? [];
-              setCollectionIds(vals.map(Number));
-            }}
-          >
-            {collections?.map((c) => (
-              <Option
-                key={c.id}
-                value={String(c.id)}
-                text={`${c.title} (${c.resource_count ?? 0})`}
-              >
-                {c.title} ({c.resource_count ?? 0})
-              </Option>
-            ))}
-          </Dropdown>
-          {collectionIds.length > 0 && (
-            <div className={styles.tagPills}>
-              {collectionIds.map((cid) => {
-                const c = collections?.find((x) => x.id === cid);
-                return c ? (
-                  <Badge key={cid} appearance="filled" color="brand">{c.title}</Badge>
-                ) : null;
-              })}
-            </div>
-          )}
-        </div>
-      </Card>
-
-      {/* 分类（单选，树形层级下拉） */}
-      <Card style={{ padding: '16px' }}>
-        <Label>分类</Label>
-        <div className={styles.field} style={{ marginBottom: 0 }}>
-          <CategoryTreeSelect
-            categories={categoriesTree}
-            value={categoryId}
-            onChange={setCategoryId}
-            placeholder="选择分类（可选）"
-            emptyLabel="（无分类）"
-            showCount
-            style={{ minWidth: '240px' }}
-          />
-        </div>
-      </Card>
-
-      {/* 缩略图 */}
-      <Card style={{ padding: '16px' }}>
-        <Label>缩略图{pendingThumbnail ? '（保存后上传）' : ''}</Label>
-        <div className={styles.thumbRow}>
-          {pendingThumbnail || thumbnailPath ? (
-            <img
-              className={styles.thumb}
-              src={pendingThumbnail ? convertFileSrc(pendingThumbnail) : assetUrl(thumbnailPath)}
-              alt="缩略图"
-            />
-          ) : (
-            <div className={styles.thumb} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: tokens.colorNeutralForeground3 }}>
-              无
-            </div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <Button appearance="outline" size="small" icon={<ArrowUploadRegular />} onClick={uploadThumbnail}>
-              {pendingThumbnail ? '重新选择' : '上传'}
-            </Button>
-            {(pendingThumbnail || thumbnailPath) && (
-              <Button appearance="subtle" size="small" icon={<DeleteRegular />} onClick={clearThumbnail}>
-                清除
-              </Button>
-            )}
-          </div>
-        </div>
-      </Card>
-
-      {/* 附件项（拖拽排序） */}
-      <Card style={{ padding: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-          <Label>附件项（支持多个，可拖拽排序）</Label>
-          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-            {ITEM_TYPES.map((t) => (
-              <Button
-                key={t.value}
-                appearance="outline"
-                size="small"
-                icon={<AddCircleRegular />}
-                onClick={() => addItem(t.value as CreateItem['type'])}
-              >
-                {t.label}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        {items.length === 0 ? (
-          <div style={{ padding: '16px', textAlign: 'center', color: tokens.colorNeutralForeground3 }}>
-            暂无附件，点击上方按钮添加链接 / 磁力种子 / 文件等
-          </div>
-        ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleItemDragEnd}>
-            <SortableContext items={items.map((it) => it._id)} strategy={verticalListSortingStrategy}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {items.map((it) => (
-                  <SortableItem key={it._id} item={it}>
-                    <div className={styles.itemBlock}>
-                      <div className={styles.itemHeader}>
-                        <Badge appearance="outline">
-                          {ITEM_TYPES.find((t) => t.value === it.type)?.label ?? it.type}
-                        </Badge>
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          icon={<DeleteRegular />}
-                          onClick={() => removeItem(it._id)}
-                        />
-                      </div>
-                      <div className={styles.field} style={{ marginBottom: '0' }}>
-                        <Label>描述</Label>
-                        <Input
-                          value={it.description}
-                          onChange={(_, d) => updateItem(it._id, { description: d.value })}
-                          placeholder="可选描述"
-                        />
-                      </div>
-                      {it.type === 'magnet_torrent' ? (
-                        <>
-                          <div className={styles.field} style={{ marginBottom: '0' }}>
-                            <Label>磁力链接</Label>
-                            <Input
-                              value={it.content}
-                              onChange={(_, d) => updateItem(it._id, { content: d.value })}
-                              placeholder="magnet:?xt=urn:btih:..."
-                            />
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <Button
-                              size="small"
-                              appearance="outline"
-                              icon={<ArrowUploadRegular />}
-                              onClick={() => uploadTorrent(it._id)}
-                            >
-                              上传种子文件
-                            </Button>
-                            {it.file_name && (
-                              <>
-                                <Badge appearance={it.localFilePath ? 'tint' : 'outline'} title={it.localFilePath ? '保存后上传' : undefined}>
-                                  {it.file_name}{it.localFilePath ? ' · 待保存' : ''}
-                                </Badge>
-                                <Button
-                                  size="small"
-                                  appearance="subtle"
-                                  icon={<DeleteRegular />}
-                                  onClick={() => updateItem(it._id, { file_path: '', file_name: '', localFilePath: undefined })}
-                                />
-                              </>
-                            )}
-                          </div>
-                        </>
-                      ) : it.type === 'file' ? (
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <Button
-                            size="small"
-                            appearance="outline"
-                            icon={<ArrowUploadRegular />}
-                            onClick={() => uploadItemFile(it._id)}
-                          >
-                            上传文件
-                          </Button>
-                          {it.file_name && (
-                            <>
-                              <Badge appearance="outline">{it.file_name}</Badge>
-                              <Button
-                                size="small"
-                                appearance="subtle"
-                                icon={<DeleteRegular />}
-                                onClick={() => updateItem(it._id, { file_path: '', file_name: '' })}
-                              />
-                            </>
-                          )}
-                        </div>
-                      ) : (
-                        <div className={styles.field} style={{ marginBottom: '0' }}>
-                          <Label>链接</Label>
-                          <Input
-                            value={it.content}
-                            onChange={(_, d) => updateItem(it._id, { content: d.value })}
-                            placeholder={it.type === 'ed2k' ? 'ed2k://...' : 'https://...'}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </SortableItem>
-                ))}
+                  <Option value="1" text="1 - 需权限 1 及以上">
+                    1 - 需权限 1 及以上
+                  </Option>
+                  <Option value="2" text="2 - 需权限 2 及以上">
+                    2 - 需权限 2 及以上
+                  </Option>
+                  <Option value="3" text="3 - 需权限 3 及以上">
+                    3 - 需权限 3 及以上
+                  </Option>
+                  <Option value="4" text="4 - 需权限 4 及以上">
+                    4 - 需权限 4 及以上
+                  </Option>
+                  <Option value="5" text="5 - 需权限 5（默认仅管理员）">
+                    5 - 需权限 5（默认仅管理员）
+                  </Option>
+                </Dropdown>
               </div>
-            </SortableContext>
-          </DndContext>
-        )}
-      </Card>
+              {isAdmin && (
+                <div className={styles.field}>
+                  <Label>发布身份（马甲）</Label>
+                  <Dropdown
+                    value={
+                      authorId == null
+                        ? '当前账号'
+                        : (() => {
+                            const a = authors?.find((x) => x.id === authorId);
+                            return a ? a.nickname || a.username : `用户 #${authorId}`;
+                          })()
+                    }
+                    selectedOptions={[String(authorId ?? 'me')]}
+                    onOptionSelect={(_, d) => {
+                      const v = d.optionValue;
+                      setAuthorId(v === 'me' ? null : Number(v));
+                    }}
+                  >
+                    <Option value="me" text="当前账号">
+                      当前账号
+                    </Option>
+                    {authors?.map((a) => (
+                      <Option key={a.id} value={String(a.id)} text={a.nickname || a.username}>
+                        {a.nickname || a.username}
+                      </Option>
+                    ))}
+                  </Dropdown>
+                </div>
+              )}
+            </div>
 
-      {/* 图集（拖拽排序） */}
-      <Card style={{ padding: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <Label>图集</Label>
-          <Button
-            size="small"
-            appearance="outline"
-            icon={<AddCircleRegular />}
-            onClick={uploadGallery}
-          >
-            添加图片
-          </Button>
-        </div>
-        {gallery.length === 0 ? (
-          <div style={{ padding: '16px', textAlign: 'center', color: tokens.colorNeutralForeground3 }}>
-            暂无图片
-          </div>
-        ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleGalleryDragEnd}>
-            <SortableContext
-              items={gallery.map((im) => String(im.id))}
-              strategy={horizontalListSortingStrategy}
-            >
-              <div className={styles.gallery}>
-                {gallery.map((im) => (
-                  <SortableImage
-                    key={im.id}
-                    img={im}
-                    onDelete={() => deleteGalleryImage(im)}
+            {/* 分类与访问密码并排：两者都是单行控件，纵向各占一行会显得松散 */}
+            <div className={styles.row}>
+              <div className={styles.field}>
+                <Label>分类</Label>
+                <CategoryTreeSelect
+                  categories={categoriesTree}
+                  value={categoryId}
+                  onChange={setCategoryId}
+                  placeholder="选择分类（可选）"
+                  emptyLabel="（无分类）"
+                  showCount
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div className={styles.field}>
+                <Label htmlFor="pwd">访问密码</Label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {/* flex:1 + minWidth:0：输入框随列宽伸缩，且并排放按钮时不会被自身最小宽度顶出列外 */}
+                  <Input
+                    id="pwd"
+                    type="password"
+                    placeholder={hasPassword ? '已设置密码，留空则不修改' : '留空 = 不设密码'}
+                    value={accessPassword}
+                    onChange={(_, d) => {
+                      setAccessPassword(d.value);
+                      setClearPassword(false);
+                    }}
+                    style={{ flex: 1, minWidth: 0 }}
                   />
-                ))}
+                  {hasPassword && (
+                    <Button
+                      appearance="outline"
+                      style={{ flexShrink: 0 }}
+                      onClick={() => {
+                        setClearPassword(!clearPassword);
+                        setAccessPassword('');
+                      }}
+                    >
+                      {clearPassword ? '撤销清除' : '清除密码'}
+                    </Button>
+                  )}
+                </div>
               </div>
-            </SortableContext>
-          </DndContext>
-        )}
+            </div>
+
+            <div className={styles.field}>
+              <Label>合集</Label>
+              <PillPicker
+                options={collectionOptions}
+                selectedIds={collectionIds}
+                onChange={setCollectionIds}
+                searchPlaceholder="搜索合集：输入即过滤，点击结果即可选中"
+                emptyHint="还没有合集，可先在合集页面创建"
+                noMatchHint="没有匹配的合集"
+              />
+            </div>
+          </div>
+        </div>
       </Card>
+
+      <ItemsCard
+        items={items}
+        sensors={sensors}
+        onAdd={addItem}
+        onRemove={removeItem}
+        onUpdate={updateItem}
+        onUploadTorrent={uploadTorrent}
+        onUploadFile={uploadItemFile}
+        onDragEnd={handleItemDragEnd}
+      />
+
+      <GalleryCard
+        images={gallery}
+        sensors={sensors}
+        onUpload={uploadGallery}
+        onDelete={deleteGalleryImage}
+        onDragEnd={handleGalleryDragEnd}
+      />
 
       {collectOpen && (
         <CollectDialog
-          hasThumbnail={!!thumbnailPath}
+          hasThumbnail={!!(thumbnailPath || pendingThumbnail || pendingRemoteThumb)}
           onClose={() => setCollectOpen(false)}
           onApply={handleCollectApply}
         />
       )}
+
+      {/* 保存期间下载远程图片：阻塞式进度，避免边改边存 */}
+      <SaveProgressDialog
+        open={savingRemote}
+        rows={savingRows}
+        proxy={imgProgress.proxy}
+        progress={imgProgress.progress}
+      />
     </div>
   );
 }

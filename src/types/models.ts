@@ -7,7 +7,8 @@ export interface Resource {
   content: string;
   /** 阅读权限：0=公开（无需登录），>0 需要读者权限值 >= read_level */
   read_level: number;
-  access_password: string;
+  /** 是否设置了访问密码（密码哈希不下发给前端） */
+  has_password: boolean;
   thumbnail_path: string;
   created_at: string;
   updated_at: string;
@@ -166,7 +167,10 @@ export interface CreateResource {
   description: string;
   content: string;
   read_level?: number;
+  /** 留空 = 不改动；非空 = 设置新密码 */
   access_password: string;
+  /** 显式清除访问密码 */
+  clear_password?: boolean;
   thumbnail_path: string;
   tag_ids: number[];
   collection_ids: number[];
@@ -217,7 +221,8 @@ export interface Collection {
   title: string;
   description: string;
   visibility: 'public' | 'private';
-  access_password: string;
+  /** 是否设置了访问密码（密码哈希不下发给前端） */
+  has_password: boolean;
   thumbnail_path: string;
   content: string;
   created_at: string;
@@ -233,7 +238,10 @@ export interface CreateCollection {
   title: string;
   description: string;
   visibility?: string;
+  /** 留空 = 不改动；非空 = 设置新密码 */
   access_password: string;
+  /** 显式清除访问密码 */
+  clear_password?: boolean;
   thumbnail_path: string;
   content?: string;
   author_id?: number;
@@ -242,11 +250,11 @@ export interface CreateCollection {
 // --- 附件类型元数据 ---
 
 export const ITEM_TYPE_META: Record<string, { label: string; icon: string }> = {
-  link:           { label: '链接',     icon: '🔗' },
-  direct_link:    { label: '直链',     icon: '⬇️' },
+  link: { label: '链接', icon: '🔗' },
+  direct_link: { label: '直链', icon: '⬇️' },
   magnet_torrent: { label: '磁力种子', icon: '🧲' },
-  ed2k:           { label: 'eD2K',     icon: '🔌' },
-  file:           { label: '附件',     icon: '📁' },
+  ed2k: { label: 'eD2K', icon: '🔌' },
+  file: { label: '附件', icon: '📁' },
 };
 
 // --- 分类（树形多级子分类） ---

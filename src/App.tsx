@@ -30,36 +30,68 @@ export const router = createHashRouter([
       { path: 'collection/:cid', element: <CollectionDetailPage /> },
       {
         path: 'collection-edit',
-        element: <RequirePerm feature="collection_own"><CollectionEditPage /></RequirePerm>,
+        element: (
+          <RequirePerm feature="collection_own">
+            <CollectionEditPage />
+          </RequirePerm>
+        ),
       },
       {
         path: 'collection-edit/:cid',
-        element: <RequirePerm feature="collection_own"><CollectionEditPage /></RequirePerm>,
+        element: (
+          <RequirePerm feature="collection_own">
+            <CollectionEditPage />
+          </RequirePerm>
+        ),
       },
       {
         path: 'categories',
-        element: <RequirePerm feature="article"><CategoriesPage /></RequirePerm>,
+        element: (
+          <RequirePerm feature="article">
+            <CategoriesPage />
+          </RequirePerm>
+        ),
       },
       {
         path: 'edit',
-        element: <RequirePerm feature="article"><EditPage /></RequirePerm>,
+        element: (
+          <RequirePerm feature="article">
+            <EditPage />
+          </RequirePerm>
+        ),
       },
       {
         path: 'edit/:rid',
-        element: <RequirePerm feature="article"><EditPage /></RequirePerm>,
+        element: (
+          <RequirePerm feature="article">
+            <EditPage />
+          </RequirePerm>
+        ),
       },
       {
         path: 'trash',
-        element: <RequirePerm feature="trash"><TrashPage /></RequirePerm>,
+        element: (
+          <RequirePerm feature="trash">
+            <TrashPage />
+          </RequirePerm>
+        ),
       },
       {
         // 各 Tab 内部按功能权限自行门控
         path: 'admin',
-        element: <RequireAuth><AdminPage /></RequireAuth>,
+        element: (
+          <RequireAuth>
+            <AdminPage />
+          </RequireAuth>
+        ),
       },
       {
         path: 'profile',
-        element: <RequireAuth><ProfilePage /></RequireAuth>,
+        element: (
+          <RequireAuth>
+            <ProfilePage />
+          </RequireAuth>
+        ),
       },
     ],
   },

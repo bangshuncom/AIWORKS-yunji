@@ -34,7 +34,9 @@ export function MarkdownView({ content, className }: MarkdownViewProps) {
     }).then((result) => {
       if (!cancelled) setHtml(rewriteAssetHtml(result, 'view'));
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [content]);
 
   // 内容变化后重置预览状态
@@ -89,12 +91,7 @@ export function MarkdownView({ content, className }: MarkdownViewProps) {
         dangerouslySetInnerHTML={{ __html: html }}
         style={{ cursor: 'default' }}
       />
-      <ImageLightbox
-        images={previewImages}
-        index={preview}
-        onIndexChange={setPreview}
-        onClose={() => setPreview(-1)}
-      />
+      <ImageLightbox images={previewImages} index={preview} onIndexChange={setPreview} onClose={() => setPreview(-1)} />
     </>
   );
 }

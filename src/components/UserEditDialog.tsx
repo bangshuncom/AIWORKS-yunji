@@ -22,7 +22,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { userApi, authApi, assetUrl } from '../lib/tauri';
 import { useAuthStore } from '../stores/authStore';
 import { AvatarCropDialog } from './AvatarCropDialog';
-import { LEVEL_OPTIONS, levelText } from '../routes/AdminPage';
+import { LEVEL_OPTIONS, levelText } from '../lib/levels';
 import type { AdminUser } from '../types/models';
 
 export interface UserEditDialogProps {
@@ -115,12 +115,15 @@ export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogPro
 
   return (
     <>
-      <Dialog open onOpenChange={(_, d) => { if (!d.open) onClose(); }}>
+      <Dialog
+        open
+        onOpenChange={(_, d) => {
+          if (!d.open) onClose();
+        }}
+      >
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>
-              编辑用户（{target.nickname || target.username}）
-            </DialogTitle>
+            <DialogTitle>编辑用户（{target.nickname || target.username}）</DialogTitle>
             <DialogContent>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
                 <Label>头像</Label>
@@ -130,12 +133,7 @@ export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogPro
                     name={form.nickname || form.username}
                     image={avatar ? { src: assetUrl(avatar) } : undefined}
                   />
-                  <Button
-                    appearance="outline"
-                    size="small"
-                    icon={<ImageRegular />}
-                    onClick={pickAvatar}
-                  >
+                  <Button appearance="outline" size="small" icon={<ImageRegular />} onClick={pickAvatar}>
                     更换头像
                   </Button>
                 </div>

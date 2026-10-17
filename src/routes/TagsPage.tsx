@@ -22,8 +22,9 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, RenameRegular, DeleteRegular, MergeRegular } from '@fluentui/react-icons';
 import { tagApi } from '../lib/tauri';
+import { confirmDanger } from '../lib/dialog';
 import type { Tag } from '../types/models';
-import { useSelection, CardCheckbox, BatchBar, runBatchAction } from '../components/batch';
+import { useSelection, CardCheckbox, BatchBar, runBatchAction } from '../components/Selection';
 import { CardContextMenu } from '../components/CardContextMenu';
 import { Pagination } from '../components/Pagination';
 import { useSharedStyles } from '../styles/shared';
@@ -108,8 +109,8 @@ export function TagsPage() {
     renameMut.mutate({ id: renameId, name });
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm('确认删除该标签？关联资源不会被删除。')) deleteMut.mutate(id);
+  const handleDelete = async (id: number) => {
+    if (await confirmDanger('确认删除该标签？关联资源不会被删除。')) deleteMut.mutate(id);
   };
 
   const batchDelete = () =>
@@ -178,49 +179,48 @@ export function TagsPage() {
         </Card>
       ) : (
         <>
-        <div className={s.gridList}>
-          {tags.map((tag) => (
-            <CardContextMenu
-              key={tag.id}
-              items={canTag ? [
-                {
-                  icon: <RenameRegular />,
-                  label: '重命名',
-                  onClick: () => openRename(tag),
-                },
-                {
-                  icon: <DeleteRegular />,
-                  label: '删除',
-                  danger: true,
-                  onClick: () => handleDelete(tag.id),
-                },
-              ] : []}
-            >
-              <div
-                className={`batch-card ${s.gridCard}`}
-                onClick={() => navigate(`/?tag=${tag.id}`)}
+          <div className={s.gridList}>
+            {tags.map((tag) => (
+              <CardContextMenu
+                key={tag.id}
+                items={
+                  canTag
+                    ? [
+                        {
+                          icon: <RenameRegular />,
+                          label: '重命名',
+                          onClick: () => openRename(tag),
+                        },
+                        {
+                          icon: <DeleteRegular />,
+                          label: '删除',
+                          danger: true,
+                          onClick: () => handleDelete(tag.id),
+                        },
+                      ]
+                    : []
+                }
               >
-                {canTag && (
-                  <CardCheckbox
-                    checked={selection.selected.has(tag.id)}
-                    onChange={(c) => selection.toggle(tag.id, c)}
-                  />
-                )}
-                <div className={s.gridCardInfo}>
-                  <span
-                    style={{ fontSize: '15px', fontWeight: 600, color: tokens.colorBrandForeground1 }}
-                  >
-                    {tag.name}
-                  </span>
-                  <Badge appearance="filled" color="informative">
-                    {tag.count ?? 0} 资源
-                  </Badge>
+                <div className={`batch-card ${s.gridCard}`} onClick={() => navigate(`/?tag=${tag.id}`)}>
+                  {canTag && (
+                    <CardCheckbox
+                      checked={selection.selected.has(tag.id)}
+                      onChange={(c) => selection.toggle(tag.id, c)}
+                    />
+                  )}
+                  <div className={s.gridCardInfo}>
+                    <span style={{ fontSize: '15px', fontWeight: 600, color: tokens.colorBrandForeground1 }}>
+                      {tag.name}
+                    </span>
+                    <Badge appearance="filled" color="informative">
+                      {tag.count ?? 0} 资源
+                    </Badge>
+                  </div>
                 </div>
-              </div>
-            </CardContextMenu>
-          ))}
-        </div>
-        <Pagination page={page} totalPages={totalPages} total={total} onChange={setPage} />
+              </CardContextMenu>
+            ))}
+          </div>
+          <Pagination page={page} totalPages={totalPages} total={total} onChange={setPage} />
         </>
       )}
 
@@ -230,7 +230,12 @@ export function TagsPage() {
           selectedCount={selection.size}
           allChecked={!!tags && tags.length > 0 && tags.every((t) => selection.selected.has(t.id))}
           total={tags?.length ?? 0}
-          onSelectAll={(c) => selection.selectAll((tags ?? []).map((t) => t.id), c)}
+          onSelectAll={(c) =>
+            selection.selectAll(
+              (tags ?? []).map((t) => t.id),
+              c,
+            )
+          }
           onInvert={() => selection.invert((tags ?? []).map((t) => t.id))}
           onClear={selection.clear}
         >
@@ -243,12 +248,7 @@ export function TagsPage() {
           >
             合并标签
           </Button>
-          <Button
-            appearance="primary"
-            size="small"
-            icon={<DeleteRegular />}
-            onClick={batchDelete}
-          >
+          <Button appearance="primary" size="small" icon={<DeleteRegular />} onClick={batchDelete}>
             批量删除
           </Button>
         </BatchBar>
@@ -262,22 +262,14 @@ export function TagsPage() {
             <DialogContent>
               <div className={s.field}>
                 <Label htmlFor="rename-input">新名称</Label>
-                <Input
-                  id="rename-input"
-                  value={renameValue}
-                  onChange={(_, d) => setRenameValue(d.value)}
-                />
+                <Input id="rename-input" value={renameValue} onChange={(_, d) => setRenameValue(d.value)} />
               </div>
             </DialogContent>
             <DialogActions>
               <DialogTrigger>
                 <Button appearance="secondary">取消</Button>
               </DialogTrigger>
-              <Button
-                appearance="primary"
-                onClick={handleRename}
-                disabled={renameMut.isPending || !renameValue.trim()}
-              >
+              <Button appearance="primary" onClick={handleRename} disabled={renameMut.isPending || !renameValue.trim()}>
                 保存
               </Button>
             </DialogActions>
@@ -294,39 +286,41 @@ export function TagsPage() {
               <p style={{ marginTop: 0, color: tokens.colorNeutralForeground2 }}>
                 选择目标标签，其他选中标签的资源将合并到该标签下，源标签将被删除。
               </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
+              <div
+                style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}
+              >
                 {tags
                   ?.filter((t) => selection.selected.has(t.id))
                   .map((tag) => (
-                  <label
-                    key={tag.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '8px',
-                      padding: '6px 8px', borderRadius: '4px', cursor: 'pointer',
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="merge-target"
-                      style={{ accentColor: tokens.colorBrandForeground1 }}
-                      checked={mergeTarget === tag.id}
-                      onChange={() => setMergeTarget(tag.id)}
-                    />
-                    <span>{tag.name}</span>
-                    <Badge>{tag.count ?? 0}</Badge>
-                  </label>
-                ))}
+                    <label
+                      key={tag.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '6px 8px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="merge-target"
+                        style={{ accentColor: tokens.colorBrandForeground1 }}
+                        checked={mergeTarget === tag.id}
+                        onChange={() => setMergeTarget(tag.id)}
+                      />
+                      <span>{tag.name}</span>
+                      <Badge>{tag.count ?? 0}</Badge>
+                    </label>
+                  ))}
               </div>
             </DialogContent>
             <DialogActions>
               <DialogTrigger>
                 <Button appearance="secondary">取消</Button>
               </DialogTrigger>
-              <Button
-                appearance="primary"
-                onClick={handleMerge}
-                disabled={mergeMut.isPending || mergeTarget == null}
-              >
+              <Button appearance="primary" onClick={handleMerge} disabled={mergeMut.isPending || mergeTarget == null}>
                 合并
               </Button>
             </DialogActions>

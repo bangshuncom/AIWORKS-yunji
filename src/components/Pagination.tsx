@@ -2,6 +2,10 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, tokens } from '@fluentui/react-components';
 import { ChevronLeftRegular, ChevronRightRegular } from '@fluentui/react-icons';
+import { useComposingInput } from '../hooks/useComposingInput';
+
+/** 跳页框只放行数字；组词期间不改写内容，见 useComposingInput */
+const onlyDigits = (s: string) => s.replace(/[^\d]/g, '');
 
 export interface PaginationProps {
   page: number;
@@ -12,6 +16,7 @@ export interface PaginationProps {
 
 export function Pagination({ page, totalPages, total, onChange }: PaginationProps) {
   const [jump, setJump] = useState(String(page));
+  const composing = useComposingInput();
 
   // 外部翻页后同步输入框
   useEffect(() => {
@@ -50,8 +55,7 @@ export function Pagination({ page, totalPages, total, onChange }: PaginationProp
         上一页
       </Button>
       <span style={{ color: tokens.colorNeutralForeground2, fontSize: '13px' }}>
-        第 {page} / {totalPages} 页
-        {total != null && ` · 共 ${total} 项`}
+        第 {page} / {totalPages} 页{total != null && ` · 共 ${total} 项`}
       </span>
       <Button
         appearance="outline"
@@ -69,7 +73,12 @@ export function Pagination({ page, totalPages, total, onChange }: PaginationProp
           size="small"
           style={{ width: '64px' }}
           value={jump}
-          onChange={(_, d) => setJump(d.value.replace(/[^\d]/g, ''))}
+          onChange={(_, d) => setJump(composing.transform(d.value, onlyDigits))}
+          onCompositionStart={composing.onCompositionStart}
+          onCompositionEnd={(ev) => {
+            composing.onCompositionEnd();
+            setJump(onlyDigits(ev.currentTarget.value));
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') doJump();
           }}

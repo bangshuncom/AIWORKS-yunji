@@ -1,43 +1,13 @@
 // 注册页
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import {
-  Card,
-  CardHeader,
-  Input,
-  Button,
-  Label,
-  makeStyles,
-} from '@fluentui/react-components';
+import { Button } from '@fluentui/react-components';
+import { AuthShell } from '../components/common/AuthShell';
+import { FormField } from '../components/common/FormField';
 import { useAuthStore } from '../stores/authStore';
 import { authApi } from '../lib/tauri';
 
-const useStyles = makeStyles({
-  container: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '100vh',
-  },
-  card: {
-    width: '400px',
-    padding: '24px',
-  },
-  field: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-    marginBottom: '16px',
-  },
-  footer: {
-    marginTop: '12px',
-    textAlign: 'center',
-    fontSize: '13px',
-  },
-});
-
 export function RegisterPage() {
-  const styles = useStyles();
   const navigate = useNavigate();
   const { setUser } = useAuthStore();
   const [username, setUsername] = useState('');
@@ -68,69 +38,47 @@ export function RegisterPage() {
   };
 
   return (
-    <div className={styles.container}>
-      <Card className={styles.card}>
-        <CardHeader header={<h2>注册</h2>} />
-        <form onSubmit={handleSubmit}>
-          <div className={styles.field}>
-            <Label htmlFor="username">用户名</Label>
-            <Input
-              id="username"
-              value={username}
-              onChange={(_, d) => setUsername(d.value)}
-              placeholder="2-32 个字符"
-              required
-            />
-          </div>
-          <div className={styles.field}>
-            <Label htmlFor="nickname">昵称</Label>
-            <Input
-              id="nickname"
-              value={nickname}
-              onChange={(_, d) => setNickname(d.value)}
-              required
-            />
-          </div>
-          <div className={styles.field}>
-            <Label htmlFor="email">邮箱</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(_, d) => setEmail(d.value)}
-              required
-            />
-          </div>
-          <div className={styles.field}>
-            <Label htmlFor="password">密码</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(_, d) => setPassword(d.value)}
-              placeholder="至少 6 位"
-              required
-            />
-          </div>
-          <div className={styles.field}>
-            <Label htmlFor="confirm">确认密码</Label>
-            <Input
-              id="confirm"
-              type="password"
-              value={confirmPassword}
-              onChange={(_, d) => setConfirmPassword(d.value)}
-              required
-            />
-          </div>
-          {error && <div style={{ color: 'red', marginBottom: '8px' }}>{error}</div>}
-          <Button type="submit" appearance="primary" disabled={loading} style={{ width: '100%' }}>
-            {loading ? '注册中...' : '注册'}
-          </Button>
-        </form>
-        <div className={styles.footer}>
+    <AuthShell
+      title="注册"
+      footer={
+        <>
           已有账户？<Link to="/login">去登录</Link>
-        </div>
-      </Card>
-    </div>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit}>
+        <FormField
+          id="username"
+          label="用户名"
+          value={username}
+          onChange={(_, d) => setUsername(d.value)}
+          placeholder="2-32 个字符"
+          required
+        />
+        <FormField id="nickname" label="昵称" value={nickname} onChange={(_, d) => setNickname(d.value)} required />
+        <FormField id="email" label="邮箱" type="email" value={email} onChange={(_, d) => setEmail(d.value)} required />
+        <FormField
+          id="password"
+          label="密码"
+          type="password"
+          value={password}
+          onChange={(_, d) => setPassword(d.value)}
+          placeholder="至少 6 位"
+          required
+        />
+        <FormField
+          id="confirm"
+          label="确认密码"
+          type="password"
+          value={confirmPassword}
+          onChange={(_, d) => setConfirmPassword(d.value)}
+          required
+        />
+        {error && <div style={{ color: 'red', marginBottom: '8px' }}>{error}</div>}
+        <Button type="submit" appearance="primary" disabled={loading} style={{ width: '100%' }}>
+          {loading ? '注册中...' : '注册'}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

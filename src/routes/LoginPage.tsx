@@ -1,42 +1,12 @@
 // 登录页
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import {
-  Card,
-  CardHeader,
-  Input,
-  Button,
-  Label,
-  makeStyles,
-} from '@fluentui/react-components';
+import { Button } from '@fluentui/react-components';
+import { AuthShell } from '../components/common/AuthShell';
+import { FormField } from '../components/common/FormField';
 import { useAuthStore } from '../stores/authStore';
 
-const useStyles = makeStyles({
-  container: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '100vh',
-  },
-  card: {
-    width: '400px',
-    padding: '24px',
-  },
-  field: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-    marginBottom: '16px',
-  },
-  footer: {
-    marginTop: '12px',
-    textAlign: 'center',
-    fontSize: '13px',
-  },
-});
-
 export function LoginPage() {
-  const styles = useStyles();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const next = searchParams.get('next') || '/';
@@ -61,38 +31,29 @@ export function LoginPage() {
   };
 
   return (
-    <div className={styles.container}>
-      <Card className={styles.card}>
-        <CardHeader header={<h2>登录</h2>} />
-        <form onSubmit={handleSubmit}>
-          <div className={styles.field}>
-            <Label htmlFor="username">用户名</Label>
-            <Input
-              id="username"
-              value={username}
-              onChange={(_, d) => setUsername(d.value)}
-              required
-            />
-          </div>
-          <div className={styles.field}>
-            <Label htmlFor="password">密码</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(_, d) => setPassword(d.value)}
-              required
-            />
-          </div>
-          {error && <div style={{ color: 'red', marginBottom: '8px' }}>{error}</div>}
-          <Button type="submit" appearance="primary" disabled={loading} style={{ width: '100%' }}>
-            {loading ? '登录中...' : '登录'}
-          </Button>
-        </form>
-        <div className={styles.footer}>
+    <AuthShell
+      title="登录"
+      footer={
+        <>
           还没有账户？<Link to="/register">注册</Link>
-        </div>
-      </Card>
-    </div>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit}>
+        <FormField id="username" label="用户名" value={username} onChange={(_, d) => setUsername(d.value)} required />
+        <FormField
+          id="password"
+          label="密码"
+          type="password"
+          value={password}
+          onChange={(_, d) => setPassword(d.value)}
+          required
+        />
+        {error && <div style={{ color: 'red', marginBottom: '8px' }}>{error}</div>}
+        <Button type="submit" appearance="primary" disabled={loading} style={{ width: '100%' }}>
+          {loading ? '登录中...' : '登录'}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

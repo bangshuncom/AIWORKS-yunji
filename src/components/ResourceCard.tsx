@@ -6,7 +6,7 @@ import { relativeTime } from '../lib/format';
 import { ITEM_TYPE_META } from '../types/models';
 import type { Resource } from '../types/models';
 import { useSharedStyles } from '../styles/shared';
-import { CardCheckbox } from './batch';
+import { CardCheckbox } from './Selection';
 import type { ViewMode } from '../stores/uiStore';
 
 export interface ResourceCardProps {
@@ -54,21 +54,13 @@ export function ResourceCard({
 
   const checkbox = selectable && <CardCheckbox checked={checked} onChange={onToggle} />;
 
-  const thumbEl = r.thumbnail_path ? (
-    <img
-      src={assetUrl(r.thumbnail_path)}
-      alt={r.title}
-      loading="lazy"
-    />
-  ) : null;
+  const thumbEl = r.thumbnail_path ? <img src={assetUrl(r.thumbnail_path)} alt={r.title} loading="lazy" /> : null;
 
   const placeholderChar = r.title.slice(0, 1);
 
   const titleEl = <span className={s.cardTitle}>{r.title}</span>;
 
-  const descEl = showDescription && r.description ? (
-    <span className={s.cardDesc}>{r.description}</span>
-  ) : null;
+  const descEl = showDescription && r.description ? <span className={s.cardDesc}>{r.description}</span> : null;
 
   const metaEl = (
     <div className={s.cardMeta}>
@@ -81,6 +73,11 @@ export function ResourceCard({
           </span>
         ) : null;
       })}
+      {r.has_password && (
+        <span title="需要访问密码" style={{ fontSize: '14px', lineHeight: 1 }}>
+          🔒
+        </span>
+      )}
       {badges}
     </div>
   );
@@ -142,7 +139,17 @@ export function ResourceCard({
         {thumbEl ? (
           <img className={s.gridVThumb} src={assetUrl(r.thumbnail_path)} alt={r.title} loading="lazy" />
         ) : (
-          <div className={s.gridVThumb} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', color: 'inherit', opacity: 0.4 }}>
+          <div
+            className={s.gridVThumb}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '32px',
+              color: 'inherit',
+              opacity: 0.4,
+            }}
+          >
             {placeholderChar}
           </div>
         )}

@@ -33,6 +33,12 @@ const useStyles = makeStyles({
   tree: {
     background: 'transparent',
   },
+  // 占位替代展开箭头：分类数量有限，树始终全展开，层级靠缩进表达即可。
+  // 折叠箭头在这里是多余的——点击行既要选中又会切换展开态，容易误收起子分类。
+  flatIcon: {
+    width: '12px',
+    flexShrink: 0,
+  },
   selectedItem: {
     backgroundColor: tokens.colorBrandBackground2,
     color: tokens.colorBrandForeground1,
@@ -104,11 +110,16 @@ export function CategoryTreeSelect({
       <TreeItem
         key={node.id}
         itemType={hasChildren ? 'branch' : 'leaf'}
-        onClick={(e) => { e.stopPropagation(); handleSelect(node.id); }}
+        // 受控全展开：不给折叠的机会，点击行只做选中
+        open={hasChildren ? true : undefined}
+        onClick={(e) => {
+          e.stopPropagation();
+          handleSelect(node.id);
+        }}
       >
         <TreeItemLayout
           className={isSelected ? s.selectedItem : undefined}
-          expandIcon={hasChildren ? undefined : <span style={{ width: '12px' }} />}
+          expandIcon={<span className={s.flatIcon} />}
           iconBefore={hasChildren ? <FolderRegular fontSize={16} /> : <DocumentRegular fontSize={16} />}
         >
           {node.name}
@@ -136,12 +147,7 @@ export function CategoryTreeSelect({
       </PopoverTrigger>
       <PopoverSurface className={s.surface}>
         {allowEmpty && (
-          <Button
-            className={s.clearBtn}
-            appearance="subtle"
-            size="small"
-            onClick={() => handleSelect(null)}
-          >
+          <Button className={s.clearBtn} appearance="subtle" size="small" onClick={() => handleSelect(null)}>
             {emptyLabel}
           </Button>
         )}

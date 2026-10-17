@@ -80,22 +80,23 @@ export function ImageLightbox({ images, index, onIndexChange, onClose }: ImageLi
           appearance="subtle"
           size="large"
           icon={<ChevronLeftRegular />}
-          onClick={(e) => { e.stopPropagation(); prev(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            prev();
+          }}
         />
       )}
-      <img
-        className={styles.overlayImg}
-        src={current}
-        alt={`预览 ${index + 1}`}
-        onClick={(e) => e.stopPropagation()}
-      />
+      <img className={styles.overlayImg} src={current} alt={`预览 ${index + 1}`} onClick={(e) => e.stopPropagation()} />
       {total > 1 && (
         <Button
           style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '24px', zIndex: 1001 }}
           appearance="subtle"
           size="large"
           icon={<ChevronRightRegular />}
-          onClick={(e) => { e.stopPropagation(); next(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            next();
+          }}
         />
       )}
       <Button
