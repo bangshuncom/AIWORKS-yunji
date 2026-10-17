@@ -12,7 +12,12 @@ pub struct Resource {
     pub content: String,
     /// 阅读权限：0=公开（无需登录），>0 需要读者权限值 >= read_level
     pub read_level: i64,
+    /// 访问密码哈希：仅服务端使用，不下发给前端（避免哈希外泄 / 被原样回传）
+    #[serde(skip_serializing)]
     pub access_password: String,
+    /// 前端展示用：是否设置了访问密码
+    #[serde(default)]
+    pub has_password: bool,
     pub thumbnail_path: String,
     pub created_at: String,
     pub updated_at: String,
@@ -207,7 +212,7 @@ pub async fn list(pool: &SqlitePool, params: &ListParams, viewer_level: i64) -> 
         // 聚合附件类型（magnet/torrent → magnet_torrent，去重）
         let item_types = get_item_types_for_resource(pool, id).await?;
         items.push(Resource {
-            id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
+            id, title, description, content, read_level, has_password: !access_password.is_empty(), access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
             tags, collections, category, items: vec![], images, author, item_types,
         });
     }
@@ -240,7 +245,7 @@ pub async fn get(pool: &SqlitePool, rid: i64) -> Result<Resource, AppError> {
     let item_types = get_item_types_for_resource(pool, id).await?;
 
     Ok(Resource {
-        id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
+        id, title, description, content, read_level, has_password: !access_password.is_empty(), access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
         tags, collections, category, items, images, author, item_types,
     })
 }
@@ -255,7 +260,8 @@ pub async fn create(pool: &SqlitePool, payload: &CreateResource, user_id: i64) -
     .bind(&payload.description)
     .bind(&payload.content)
     .bind(payload.read_level)
-    .bind(&payload.access_password)
+    // 访问密码：空 = 不设；非空 = 存 argon2 哈希
+    .bind(crate::auth::hash_access_password(&payload.access_password)?)
     .bind(&payload.thumbnail_path)
     .bind(user_id)
     .bind(&now)
@@ -267,20 +273,40 @@ pub async fn create(pool: &SqlitePool, payload: &CreateResource, user_id: i64) -
 
 pub async fn update(pool: &SqlitePool, rid: i64, payload: &CreateResource) -> Result<(), AppError> {
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    // 访问密码三种语义：clear_password = 清除；非空 = 设置新密码；留空 = 保持原密码不变
+    let password = if payload.clear_password == Some(true) {
+        Some(String::new())
+    } else if payload.access_password.is_empty() {
+        None
+    } else {
+        Some(crate::auth::hash_access_password(&payload.access_password)?)
+    };
+
     sqlx::query(
-        "UPDATE resources SET title=?, description=?, content=?, read_level=?, access_password=?, thumbnail_path=?, updated_at=? \
+        "UPDATE resources SET title=?, description=?, content=?, read_level=?, thumbnail_path=?, updated_at=? \
          WHERE id=? AND deleted_at IS NULL",
     )
     .bind(&payload.title)
     .bind(&payload.description)
     .bind(&payload.content)
     .bind(payload.read_level)
-    .bind(&payload.access_password)
     .bind(&payload.thumbnail_path)
     .bind(&now)
     .bind(rid)
     .execute(pool)
     .await?;
+
+    // 密码单独更新：留空（不改动）时跳过，避免把已有密码冲掉
+    if let Some(pwd) = password {
+        sqlx::query(
+            "UPDATE resources SET access_password=?, updated_at=? WHERE id=? AND deleted_at IS NULL",
+        )
+        .bind(pwd)
+        .bind(&now)
+        .bind(rid)
+        .execute(pool)
+        .await?;
+    }
     Ok(())
 }
 
@@ -326,7 +352,7 @@ pub async fn list_deleted(pool: &SqlitePool) -> Result<Vec<Resource>, AppError> 
     for row in rows {
         let (id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id) = row;
         items.push(Resource {
-            id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
+            id, title, description, content, read_level, has_password: !access_password.is_empty(), access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
             tags: vec![], collections: vec![], category: None, items: vec![], images: vec![], author: None, item_types: vec![],
         });
     }
@@ -363,7 +389,7 @@ pub async fn list_deleted_paged(
     for row in rows {
         let (id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id) = row;
         items.push(Resource {
-            id, title, description, content, read_level, access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
+            id, title, description, content, read_level, has_password: !access_password.is_empty(), access_password, thumbnail_path, created_at, updated_at, deleted_at, user_id,
             tags: vec![], collections: vec![], category: None, items: vec![], images: vec![], author: None, item_types: vec![],
         });
     }
@@ -588,7 +614,11 @@ pub struct CreateResource {
     pub content: String,
     #[serde(default)]
     pub read_level: i64,
+    /// 访问密码：留空 = 不改动（新建即不设密码）；非空 = 设置新密码
     pub access_password: String,
+    /// 显式清除访问密码
+    #[serde(default)]
+    pub clear_password: Option<bool>,
     pub thumbnail_path: String,
     #[serde(default)]
     pub tag_ids: Vec<i64>,
@@ -638,12 +668,14 @@ pub async fn batch_update(pool: &SqlitePool, payload: &BatchUpdate) -> Result<()
         q.execute(pool).await?;
     }
 
+    // 批量设置密码：留空 = 清除密码；非空 = 设为新密码（存哈希）
     if let Some(ref password) = payload.access_password {
+        let stored = crate::auth::hash_access_password(password)?;
         let sql = format!(
             "UPDATE resources SET access_password=?, updated_at=? WHERE id IN ({}) AND deleted_at IS NULL",
             in_clause
         );
-        let mut q = sqlx::query(&sql).bind(password).bind(&now);
+        let mut q = sqlx::query(&sql).bind(stored).bind(&now);
         for &id in &payload.ids {
             q = q.bind(id);
         }

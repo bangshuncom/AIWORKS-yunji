@@ -34,3 +34,12 @@ pub async fn set_many(pool: &SqlitePool, items: &HashMap<String, String>) -> Res
     }
     Ok(())
 }
+
+/// 删除一个设置项（键不存在时也返回 Ok）
+pub async fn delete(pool: &SqlitePool, key: &str) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM settings WHERE key = ?")
+        .bind(key)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

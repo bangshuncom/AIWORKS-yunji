@@ -1,11 +1,11 @@
 pub mod auth;
 pub mod categories;
 pub mod cleanup;
-pub mod collector;
 pub mod collections;
 pub mod images;
 pub mod resources;
 pub mod settings;
 pub mod tags;
 pub mod torrent;
+pub mod translate;
 pub mod users;

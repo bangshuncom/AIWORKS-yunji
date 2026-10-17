@@ -1,11 +1,9 @@
-// 网页采集：抓取单页 HTML、采集插件管理、网络图片（封面/图集）下载落库
+// 网络图片下载：流式接收 + Range 断点续传 + 解码校验，落库为封面 / 图集 / 正文图片
 use std::path::Path;
-
 use std::time::Duration;
 
 use bytes::Bytes;
 use futures_util::StreamExt;
-use once_cell::sync::Lazy;
 use reqwest::header::{HeaderMap, HeaderValue, RANGE, REFERER, USER_AGENT};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -16,349 +14,9 @@ use crate::db::repository;
 use crate::error::{AppError, CmdResult};
 use crate::state::AppState;
 
-const DEFAULT_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-const MAX_PAGE_BYTES: usize = 10 * 1024 * 1024;
-const MAX_IMAGE_BYTES: u64 = 30 * 1024 * 1024;
-/// 单个数据块的空闲等待：只要数据持续到达就不超时
-const CHUNK_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
-/// 断点续传最大轮次
-const MAX_RESUME_ROUNDS: u32 = 8;
-
-/// HTTP 客户端：按代理设置构建，设置变更时重建。
-/// proxy_mode = "system"（默认，跟随系统/环境变量） | "none"（直连） | "custom"（自定义地址）
-static HTTP: Lazy<tokio::sync::RwLock<reqwest::Client>> = Lazy::new(|| {
-    tokio::sync::RwLock::new(build_client(
-        detect_proxy(),
-    ))
-});
-
-/// 本次进程实际使用的代理地址（供进度事件展示/诊断）
-static DETECTED_PROXY: once_cell::sync::OnceCell<Option<String>> = once_cell::sync::OnceCell::new();
-
-fn build_client(proxy_url: Option<String>) -> reqwest::Client {
-    let mut builder = reqwest::Client::builder()
-        // 只限制连接阶段；慢网络下图床可能数百秒持续低速传数据，
-        // body 总时长由各调用方按空闲超时自行控制
-        .connect_timeout(Duration::from_secs(20))
-        .redirect(reqwest::redirect::Policy::limited(5));
-    if let Some(ref p) = proxy_url {
-        if let Ok(proxy) = reqwest::Proxy::all(p) {
-            builder = builder.proxy(proxy);
-        }
-    }
-    let _ = DETECTED_PROXY.set(proxy_url);
-    builder.build().expect("reqwest client")
-}
-
-async fn http_client() -> reqwest::Client {
-    HTTP.read().await.clone()
-}
-
-/// 按代理模式解析出代理地址（custom 模式下读数据库设置）
-async fn resolve_proxy_from_state(state: &State<'_, AppState>) -> Option<String> {
-    let mode = repository::settings::get(&state.db, "proxy_mode")
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "system".into());
-    match mode.as_str() {
-        "none" => None,
-        "custom" => repository::settings::get(&state.db, "proxy_url")
-            .await
-            .ok()
-            .flatten()
-            .filter(|u| !u.trim().is_empty())
-            .map(|u| if u.contains("://") { u } else { format!("http://{u}") }),
-        _ => detect_proxy(),
-    }
-}
-
-/// 应用代理设置（设置变更后调用）：重建 HTTP 客户端
-pub async fn apply_proxy_settings(state: &State<'_, AppState>) {
-    let proxy = resolve_proxy_from_state(state).await;
-    let mut client = HTTP.write().await;
-    *client = build_client(proxy);
-}
-
-/// 当前设置下实际生效的代理地址（诊断展示用）
-pub async fn current_effective_proxy(state: &State<'_, AppState>) -> Option<String> {
-    resolve_proxy_from_state(state).await
-}
-
-/// 当前生效的代理（探测前返回 None）
-fn active_proxy() -> Option<String> {
-    DETECTED_PROXY.get().cloned().flatten()
-}
-
-/// 代理解析：环境变量优先，其次读取 Windows 系统代理（与浏览器行为一致）
-fn detect_proxy() -> Option<String> {
-    for k in ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"] {
-        if let Ok(v) = std::env::var(k) {
-            let v = v.trim();
-            if !v.is_empty() {
-                return Some(if v.contains("://") {
-                    v.to_string()
-                } else {
-                    format!("http://{v}")
-                });
-            }
-        }
-    }
-    windows_system_proxy()
-}
-
-/// 解析 WinINET ProxyServer 字段：
-/// "127.0.0.1:7890" 或 "http=h:p;https=h2:p2"（优先取 https= 段）
-fn parse_wininet_proxy(raw: &str) -> Option<String> {
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return None;
-    }
-    let mut fallback: Option<String> = None;
-    for part in raw.split(';') {
-        let part = part.trim();
-        if part.is_empty() {
-            continue;
-        }
-        if let Some(v) = part.strip_prefix("https=") {
-            return Some(normalize_proxy(v));
-        }
-        if let Some(v) = part.strip_prefix("http=") {
-            if fallback.is_none() {
-                fallback = Some(v.to_string());
-            }
-        } else if !part.contains('=') && fallback.is_none() {
-            fallback = Some(part.to_string());
-        }
-    }
-    fallback.as_deref().map(normalize_proxy)
-}
-
-fn normalize_proxy(v: &str) -> String {
-    if v.contains("://") {
-        v.to_string()
-    } else {
-        format!("http://{v}")
-    }
-}
-
-#[cfg(windows)]
-fn windows_system_proxy() -> Option<String> {
-    use winreg::enums::HKEY_CURRENT_USER;
-    use winreg::RegKey;
-    let key = RegKey::predef(HKEY_CURRENT_USER)
-        .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings")
-        .ok()?;
-    let enabled: u32 = key.get_value("ProxyEnable").ok()?;
-    if enabled == 0 {
-        return None;
-    }
-    let server: String = key.get_value("ProxyServer").ok()?;
-    parse_wininet_proxy(&server)
-}
-
-#[cfg(not(windows))]
-fn windows_system_proxy() -> Option<String> {
-    None
-}
-
-#[cfg(test)]
-mod proxy_tests {
-    use super::parse_wininet_proxy;
-
-    #[test]
-    fn wininet_proxy_formats() {
-        assert_eq!(
-            parse_wininet_proxy("127.0.0.1:7890").as_deref(),
-            Some("http://127.0.0.1:7890")
-        );
-        assert_eq!(
-            parse_wininet_proxy("http=127.0.0.1:7890;https=127.0.0.1:7891").as_deref(),
-            Some("http://127.0.0.1:7891")
-        );
-        assert_eq!(parse_wininet_proxy("").as_deref(), None);
-    }
-}
-
-// ---------- 插件 ----------
-
-#[derive(Debug, Serialize)]
-pub struct CollectorInfo {
-    pub id: String,
-    pub name: String,
-    pub version: String,
-    pub description: String,
-    pub builtin: bool,
-    pub patterns: Vec<String>,
-    /// 插件完整 JSON（前端运行时按此提取字段）
-    pub raw: String,
-}
-
-const BUILTIN_FILES: &[(&str, &str)] = &[(
-    "fitgirl.yunji.json",
-    include_str!("../../resources/collectors/fitgirl.yunji.json"),
-)];
-
-fn collectors_dir(state: &AppState) -> std::path::PathBuf {
-    state.data_dir.join("collectors")
-}
-
-/// 确保插件目录存在；内置插件始终以程序内嵌版本为准（升级时自动同步，用户无法通过导入覆盖）
-fn ensure_collectors_dir(state: &AppState) -> Result<std::path::PathBuf, AppError> {
-    let dir = collectors_dir(state);
-    std::fs::create_dir_all(&dir).map_err(AppError::Io)?;
-    for (name, content) in BUILTIN_FILES {
-        let p = dir.join(name);
-        let needs_write = match std::fs::read_to_string(&p) {
-            Ok(existing) => existing != *content,
-            Err(_) => true,
-        };
-        if needs_write {
-            let _ = std::fs::write(&p, content);
-        }
-    }
-    Ok(dir)
-}
-
-fn parse_collector(raw: &str, builtin: bool) -> Option<CollectorInfo> {
-    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
-    let obj = v.as_object()?;
-    let id = obj.get("id")?.as_str()?.to_string();
-    let name = obj.get("name").and_then(|x| x.as_str()).unwrap_or(&id).to_string();
-    if id.is_empty() || !obj.contains_key("fields") {
-        return None;
-    }
-    let version = obj
-        .get("version")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .to_string();
-    let description = obj
-        .get("description")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .to_string();
-    let patterns = obj
-        .get("urlPattern")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|p| p.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    Some(CollectorInfo { id, name, version, description, builtin, patterns, raw: raw.to_string() })
-}
-
-/// 列出全部采集插件
-#[tauri::command]
-pub async fn list_collectors(state: State<'_, AppState>) -> CmdResult<Vec<CollectorInfo>> {
-    let dir = ensure_collectors_dir(&state)?;
-    let mut out = Vec::new();
-    let entries = std::fs::read_dir(&dir).map_err(AppError::Io)?;
-    for ent in entries.flatten() {
-        let path = ent.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("json") {
-            continue;
-        }
-        let Ok(raw) = std::fs::read_to_string(&path) else { continue };
-        let builtin = BUILTIN_FILES
-            .iter()
-            .any(|(name, _)| path.file_name().and_then(|n| n.to_str()) == Some(*name));
-        match parse_collector(&raw, builtin) {
-            Some(info) => out.push(info),
-            None => tracing::warn!("无法解析采集插件，已跳过: {}", path.display()),
-        }
-    }
-    out.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(out)
-}
-
-/// 从本地文件导入第三方采集插件（文件名为 <id>.yunji.json）
-#[tauri::command]
-pub async fn import_collector(state: State<'_, AppState>, source_path: String) -> CmdResult<CollectorInfo> {
-    require_feature(&state.db, &state.auth, FEATURE_ARTICLE_OWN).await?;
-    let dir = ensure_collectors_dir(&state)?;
-    let raw = std::fs::read_to_string(&source_path).map_err(AppError::Io)?;
-    let info = parse_collector(&raw, false)
-        .ok_or_else(|| AppError::BadRequest("插件格式无效：需要 id / name / fields 字段".into()))?;
-
-    let safe_id: String = info
-        .id
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
-        .collect();
-    if safe_id.is_empty() {
-        return Err(AppError::BadRequest("插件 id 非法".into()));
-    }
-    let dest_name = format!("{}.yunji.json", safe_id);
-    // 不允许覆盖内置插件
-    if BUILTIN_FILES.iter().any(|(name, _)| *name == dest_name) {
-        return Err(AppError::BadRequest("与内置插件 id 冲突，无法导入".into()));
-    }
-    std::fs::write(dir.join(&dest_name), raw).map_err(AppError::Io)?;
-    Ok(info)
-}
-
-// ---------- 网页抓取 ----------
-
-#[derive(Debug, Serialize)]
-pub struct WebPage {
-    pub url: String,
-    /// 最终 URL（跟随重定向后）
-    pub final_url: String,
-    pub body: String,
-}
-
-#[tauri::command]
-pub async fn fetch_webpage(url: String) -> CmdResult<WebPage> {
-    let parsed = reqwest::Url::parse(&url)
-        .map_err(|e| AppError::BadRequest(format!("URL 无效: {}", e)))?;
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(AppError::BadRequest("仅支持 http/https 链接".into()));
-    }
-
-    let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, HeaderValue::from_str(DEFAULT_UA).unwrap());
-    headers.insert("Accept", HeaderValue::from_str("text/html,application/xhtml+xml,*/*;q=0.8").unwrap());
-    headers.insert("Accept-Language", HeaderValue::from_str("en-US,en;q=0.9,zh-CN;q=0.8").unwrap());
-
-    let resp = tokio::time::timeout(
-        Duration::from_secs(90),
-        async {
-            let client = http_client().await;
-            client.get(parsed.clone()).headers(headers).send().await
-        },
-    )
-    .await
-    .map_err(|_| AppError::BadRequest("抓取超时（90 秒）".into()))?
-    .map_err(|e| AppError::BadRequest(format!("抓取失败: {}", e)))?;
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(AppError::BadRequest(format!("目标站点返回 HTTP {}", status.as_u16())));
-    }
-    let final_url = resp.url().to_string();
-    // 限制最大体积；读取阶段也给整体超时
-    let body = tokio::time::timeout(Duration::from_secs(90), resp.bytes())
-        .await
-        .map_err(|_| AppError::BadRequest("读取页面超时（90 秒）".into()))?
-        .map_err(|e| AppError::BadRequest(format!("读取页面失败: {}", e)))?;
-    if body.len() > MAX_PAGE_BYTES {
-        return Err(AppError::BadRequest("页面体积超过 10MB 限制".into()));
-    }
-    // charset feature 开启后 text() 可按响应头编码解码；这里从字节检测 UTF-8 BOM
-    let text = decode_html(&body);
-    Ok(WebPage { url, final_url, body: text })
-}
-
-fn decode_html(body: &[u8]) -> String {
-    if let Some(rest) = body.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
-        return String::from_utf8_lossy(rest).into_owned();
-    }
-    String::from_utf8_lossy(body).into_owned()
-}
-
-// ---------- 图片下载 ----------
+use super::http::{
+    active_proxy, http_client, CHUNK_IDLE_TIMEOUT, DEFAULT_UA, MAX_IMAGE_BYTES, MAX_RESUME_ROUNDS,
+};
 
 /// 实时下载进度（前端采集弹窗订阅 collector-progress 事件）
 #[derive(Debug, Clone, Serialize)]
@@ -388,6 +46,8 @@ pub struct CollectedImage {
     pub id: i64,
     pub file_path: String,
     pub url: String,
+    /// 原始远程地址；前端据此把下载结果映射回「待本地化」占位项
+    pub source_url: String,
     pub width: i64,
     pub height: i64,
 }
@@ -743,7 +403,14 @@ pub async fn collector_add_images(
                 match repository::images::add_to_resource(&state.db, rid, &path, w, h).await {
                     Ok(id) => {
                         let local_url = storage.get_url(&path);
-                        images.push(CollectedImage { id, file_path: path, url: local_url, width: w, height: h });
+                        images.push(CollectedImage {
+                            id,
+                            file_path: path,
+                            url: local_url,
+                            source_url: url,
+                            width: w,
+                            height: h,
+                        });
                     }
                     Err(e) => failed.push(FailedUrl { url, error: format!("入库失败: {e}") }),
                 }

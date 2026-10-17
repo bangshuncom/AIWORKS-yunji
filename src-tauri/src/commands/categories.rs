@@ -19,12 +19,6 @@ pub async fn list_categories_flat(state: State<'_, AppState>) -> CmdResult<Vec<C
     Ok(repository::categories::list_flat(&state.db).await?)
 }
 
-/// 获取单个分类
-#[tauri::command]
-pub async fn get_category(state: State<'_, AppState>, cid: i64) -> CmdResult<Category> {
-    Ok(repository::categories::get(&state.db, cid).await?)
-}
-
 /// 创建分类
 #[tauri::command]
 pub async fn create_category(
@@ -68,18 +62,6 @@ pub async fn restore_category(state: State<'_, AppState>, cid: i64) -> CmdResult
 pub async fn permanent_delete_category(state: State<'_, AppState>, cid: i64) -> CmdResult<()> {
     let _user = require_feature(&state.db, &state.auth, FEATURE_ARTICLE).await?;
     repository::categories::permanent_delete(&state.db, cid).await?;
-    Ok(())
-}
-
-/// 移动分类到新父级
-#[tauri::command]
-pub async fn move_category(
-    state: State<'_, AppState>,
-    cid: i64,
-    new_parent_id: Option<i64>,
-) -> CmdResult<()> {
-    let _user = require_feature(&state.db, &state.auth, FEATURE_ARTICLE).await?;
-    repository::categories::move_category(&state.db, cid, new_parent_id).await?;
     Ok(())
 }
 

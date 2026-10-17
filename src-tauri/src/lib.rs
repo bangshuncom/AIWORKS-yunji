@@ -1,12 +1,14 @@
 // 云记 - Tauri 应用入口
 mod auth;
 mod bencode;
+mod collector;
 mod commands;
 mod db;
 mod error;
 mod magnet;
 mod state;
 mod storage;
+mod translate;
 
 use std::path::PathBuf;
 use tauri::{Manager, WindowEvent};
@@ -65,6 +67,14 @@ pub fn run() {
                     .map_err(|e| e.to_string())
             })?;
 
+            // 翻译设置由「全局单份」改为「按服务商分桶」，补一次搬迁。
+            // 迁移只是兼容旧数据，失败不该拦住启动，所以只记日志。
+            tauri::async_runtime::block_on(async {
+                if let Err(e) = translate::migrate_legacy_settings_to_provider(&pool).await {
+                    eprintln!("翻译设置迁移失败（不影响启动）：{e}");
+                }
+            });
+
             // 初始化存储
             let storage = tauri::async_runtime::block_on(async {
                 get_storage(&pool, &data_dir)
@@ -93,7 +103,7 @@ pub fn run() {
             // 启动时应用已保存的代理设置（system/none/custom）
             tauri::async_runtime::block_on(async {
                 let state: tauri::State<AppState> = app.state();
-                commands::collector::apply_proxy_settings(&state).await;
+                collector::http::apply_proxy_settings(&state).await;
             });
 
             // 系统托盘（左键单击显示窗口，右键菜单：显示 / 退出）
@@ -201,13 +211,13 @@ pub fn run() {
             commands::collections::list_collections,
             commands::collections::list_collections_page,
             commands::collections::get_collection,
+            commands::collections::check_collection_access,
             commands::collections::create_collection,
             commands::collections::update_collection,
             commands::collections::delete_collection,
             commands::collections::restore_collection,
             commands::collections::permanent_delete_collection,
             commands::collections::sync_collection_resources,
-            commands::collections::list_collection_resource_ids,
             // settings
             commands::settings::get_public_settings,
             commands::settings::get_settings,
@@ -215,21 +225,25 @@ pub fn run() {
             commands::settings::get_upload_base_dir,
             commands::settings::upload_logo,
             commands::settings::clear_logo,
+            // translate（翻译：OpenAI 兼容接口）
+            commands::translate::translate_text,
+            commands::translate::translate_test,
+            commands::translate::translate_options,
+            commands::translate::get_translate_config,
+            commands::translate::translate_cancel,
+            commands::translate::translate_fetch_models,
             // categories（树形分类）
             commands::categories::list_categories,
             commands::categories::list_categories_flat,
-            commands::categories::get_category,
             commands::categories::create_category,
             commands::categories::update_category,
             commands::categories::delete_category,
             commands::categories::restore_category,
             commands::categories::permanent_delete_category,
-            commands::categories::move_category,
             commands::categories::save_category_order,
             // torrent
             commands::torrent::get_resource_files,
             commands::torrent::save_resource_files,
-            commands::torrent::clear_resource_files,
             commands::torrent::parse_torrent_file,
             commands::torrent::fetch_torrent,
             commands::torrent::get_fetch_status,
@@ -240,12 +254,12 @@ pub fn run() {
             commands::cleanup::scan_orphan_files,
             commands::cleanup::delete_orphan_files,
             // collector（网页采集）
-            commands::collector::fetch_webpage,
-            commands::collector::list_collectors,
-            commands::collector::import_collector,
-            commands::collector::collector_set_thumbnail,
-            commands::collector::collector_add_images,
-            commands::collector::download_remote_image,
+            collector::fetch::fetch_webpage,
+            collector::plugin::list_collectors,
+            collector::plugin::import_collector,
+            collector::image::collector_set_thumbnail,
+            collector::image::collector_add_images,
+            collector::image::download_remote_image,
             commands::settings::get_proxy_status,
             commands::settings::open_external_url,
         ])

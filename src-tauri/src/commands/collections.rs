@@ -1,7 +1,9 @@
 // 合集命令
 use tauri::State;
 
-use crate::auth::{require_feature, FEATURE_COLLECTION, FEATURE_COLLECTION_OWN};
+use crate::auth::{
+    ensure_collection_readable, require_feature, FEATURE_COLLECTION, FEATURE_COLLECTION_OWN,
+};
 use crate::db::repository;
 use crate::error::{AppError, CmdResult};
 use crate::state::AppState;
@@ -47,7 +49,28 @@ pub async fn list_collections_page(
 
 #[tauri::command]
 pub async fn get_collection(state: State<'_, AppState>, cid: i64) -> CmdResult<Collection> {
-    Ok(repository::collections::get(&state.db, cid).await?)
+    let collection = repository::collections::get(&state.db, cid).await?;
+    // 阅读权限：私有合集需为作者本人/管理员，设了访问密码则需已凭密码解锁
+    ensure_collection_readable(&state.auth, &collection).await?;
+    Ok(collection)
+}
+
+/// 校验合集访问密码，正确则在当前会话内解锁该合集
+#[tauri::command]
+pub async fn check_collection_access(
+    state: State<'_, AppState>,
+    cid: i64,
+    payload: crate::commands::resources::AccessPayload,
+) -> CmdResult<bool> {
+    let collection = repository::collections::get(&state.db, cid).await?;
+    if collection.access_password.is_empty() {
+        return Ok(true);
+    }
+    let ok = crate::auth::verify_password(&payload.password, &collection.access_password)?;
+    if ok {
+        state.auth.grant_collection(cid).await;
+    }
+    Ok(ok)
 }
 
 /// 合集正文中的首个本地图片相对路径（如 content/xxx.jpg），用作封面回退
@@ -175,10 +198,3 @@ pub async fn sync_collection_resources(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn list_collection_resource_ids(
-    state: State<'_, AppState>,
-    cid: i64,
-) -> CmdResult<Vec<i64>> {
-    Ok(repository::collections::list_resource_ids(&state.db, cid).await?)
-}

@@ -1,6 +1,6 @@
 [package]
 name = "yunji-tauri"
-version = "26.9.18"
+version = "26.10.16"
 description = "云记 - 资源管理桌面应用"
 authors = ["you"]
 edition = "2021"
@@ -39,8 +39,7 @@ thiserror = "2"
 argon2 = "0.5"
 rand = "0.8"
 
-# 文件存储
-async-trait = "0.1"
+# 文件存储（本地磁盘，单一实现）
 bytes = "1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 
@@ -57,6 +56,11 @@ html-escape = "0.2"
 
 # 正则
 regex = "1"
+
+# 机器翻译引擎的签名（百度 MD5 / 腾讯云 TC3-HMAC-SHA256）
+md-5 = "0.10"
+hmac = "0.12"
+sha2 = "0.10"
 
 # 网页采集（HTTP 抓取）
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "gzip", "brotli", "deflate", "charset", "stream"] }

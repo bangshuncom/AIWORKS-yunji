@@ -51,9 +51,13 @@ async fn list_all(pool: &SqlitePool) -> Result<Vec<Category>, AppError> {
         _,
         (i64, Option<i64>, String, String, String, i64, String, String, Option<String>, i64),
     >(
+        // 计数必须 JOIN resources 并排除软删：资源移入回收站时只是置 deleted_at，
+        // resource_categories 的关联行仍然保留，不 Join 会把回收站里的文章也算进来
         "SELECT c.id, c.parent_id, c.name, c.slug, c.description, c.sort_order, \
          c.created_at, c.updated_at, c.deleted_at, \
-         (SELECT COUNT(*) FROM resource_categories rc WHERE rc.category_id = c.id) as resource_count \
+         (SELECT COUNT(*) FROM resource_categories rc \
+          JOIN resources r ON r.id = rc.resource_id AND r.deleted_at IS NULL \
+          WHERE rc.category_id = c.id) as resource_count \
          FROM categories c WHERE c.deleted_at IS NULL ORDER BY c.sort_order, c.id",
     )
     .fetch_all(pool)
@@ -77,28 +81,6 @@ pub async fn list_tree(pool: &SqlitePool) -> Result<Vec<Category>, AppError> {
 pub async fn list_flat(pool: &SqlitePool) -> Result<Vec<CategoryFlat>, AppError> {
     let all = list_all(pool).await?;
     Ok(flatten_with_level(all))
-}
-
-/// 获取单个分类
-pub async fn get(pool: &SqlitePool, cid: i64) -> Result<Category, AppError> {
-    let row = sqlx::query_as::<
-        _,
-        (i64, Option<i64>, String, String, String, i64, String, String, Option<String>, i64),
-    >(
-        "SELECT c.id, c.parent_id, c.name, c.slug, c.description, c.sort_order, \
-         c.created_at, c.updated_at, c.deleted_at, \
-         (SELECT COUNT(*) FROM resource_categories rc WHERE rc.category_id = c.id) as resource_count \
-         FROM categories c WHERE c.id = ?",
-    )
-    .bind(cid)
-    .fetch_optional(pool)
-    .await?;
-
-    let row = row.ok_or(AppError::NotFound)?;
-    let (id, parent_id, name, slug, description, sort_order, created_at, updated_at, deleted_at, resource_count) = row;
-    Ok(Category {
-        id, parent_id, name, slug, description, sort_order, created_at, updated_at, deleted_at, resource_count, children: vec![],
-    })
 }
 
 /// 创建分类
@@ -194,25 +176,6 @@ pub async fn permanent_delete(pool: &SqlitePool, cid: i64) -> Result<(), AppErro
             .execute(pool)
             .await?;
     }
-    Ok(())
-}
-
-/// 移动分类到新父级
-pub async fn move_category(pool: &SqlitePool, cid: i64, new_parent_id: Option<i64>) -> Result<(), AppError> {
-    // 检查循环引用：不能移动到自己的子树下
-    if let Some(new_parent) = new_parent_id {
-        let descendants = get_descendant_ids(pool, cid).await?;
-        if descendants.contains(&new_parent) {
-            return Err(AppError::BadRequest("不能将分类移动到自己的子分类下".to_string()));
-        }
-    }
-    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    sqlx::query("UPDATE categories SET parent_id=?, updated_at=? WHERE id=?")
-        .bind(new_parent_id)
-        .bind(&now)
-        .bind(cid)
-        .execute(pool)
-        .await?;
     Ok(())
 }
 
@@ -386,4 +349,78 @@ fn flatten_with_level(tree: Vec<Category>) -> Vec<CategoryFlat> {
     }
     walk(tree, 0, &mut result);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::repository::testkit::*;
+
+    /// 读取分类对外暴露的文章计数（与导航栏走的是同一条查询）
+    async fn resource_count_of(pool: &SqlitePool, cid: i64) -> i64 {
+        list_all(pool)
+            .await
+            .expect("查分类")
+            .into_iter()
+            .find(|c| c.id == cid)
+            .map(|c| c.resource_count)
+            .expect("分类应存在")
+    }
+
+    /// 回归：删除文章（移入回收站）后分类计数必须立刻减少。
+    /// 曾经的写法是 `COUNT(*) FROM resource_categories WHERE category_id = ?`，
+    /// 而软删只置 resources.deleted_at、不清关联行，于是计数一直停在旧值。
+    #[tokio::test]
+    async fn count_ignores_soft_deleted_resources() {
+        let pool = memory_pool().await;
+        let cat = insert_category(&pool, "分类A").await;
+        let r1 = insert_resource(&pool, "文章1").await;
+        let r2 = insert_resource(&pool, "文章2").await;
+        attach_category(&pool, r1, cat).await;
+        attach_category(&pool, r2, cat).await;
+        assert_eq!(resource_count_of(&pool, cat).await, 2);
+
+        // 移入回收站：计数立刻减一，而不是等彻底删除
+        soft_delete_resource(&pool, r1).await;
+        assert_eq!(resource_count_of(&pool, cat).await, 1);
+
+        // 恢复：加回来
+        restore_resource(&pool, r1).await;
+        assert_eq!(resource_count_of(&pool, cat).await, 2);
+
+        // 彻底删除：外键级联清掉关联行，计数仍是 1
+        soft_delete_resource(&pool, r1).await;
+        hard_delete_resource(&pool, r1).await;
+        assert_eq!(resource_count_of(&pool, cat).await, 1);
+    }
+
+    /// 把上一条测试的成因固定下来：软删**不会**清理关联行。
+    /// 如果哪天有人「优化」掉计数子查询里的 Join resources，上一条测试会红，这里解释了原因。
+    #[tokio::test]
+    async fn soft_delete_keeps_relation_row() {
+        let pool = memory_pool().await;
+        let cat = insert_category(&pool, "分类A").await;
+        let r1 = insert_resource(&pool, "文章1").await;
+        attach_category(&pool, r1, cat).await;
+
+        soft_delete_resource(&pool, r1).await;
+        assert_eq!(
+            category_relation_rows(&pool).await,
+            1,
+            "软删只置 deleted_at，关联行仍在，所以计数必须靠 Join resources 过滤"
+        );
+    }
+
+    /// 无关联文章的分类计数为 0，且不受别的分类影响
+    #[tokio::test]
+    async fn count_is_per_category() {
+        let pool = memory_pool().await;
+        let a = insert_category(&pool, "分类A").await;
+        let b = insert_category(&pool, "分类B").await;
+        let r1 = insert_resource(&pool, "文章1").await;
+        attach_category(&pool, r1, a).await;
+
+        assert_eq!(resource_count_of(&pool, a).await, 1);
+        assert_eq!(resource_count_of(&pool, b).await, 0);
+    }
 }

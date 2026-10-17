@@ -92,6 +92,7 @@ pub async fn auth_login(
         is_admin: user.is_admin,
         permission_level: user.permission_level,
         granted_resource_ids: Default::default(),
+        granted_collection_ids: Default::default(),
     };
 
     let info = UserInfo::from(session.clone());
@@ -160,6 +161,7 @@ pub async fn auth_register(
         is_admin,
         permission_level: if is_admin { 5 } else { 0 },
         granted_resource_ids: Default::default(),
+        granted_collection_ids: Default::default(),
     };
     let info = UserInfo::from(session.clone());
     state.auth.set_user(session).await;

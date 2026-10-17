@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::auth::{ensure_readable, require_feature, FEATURE_ARTICLE_OWN};
+use crate::auth::ensure_readable;
 use crate::bencode::{self, TorrentFile as ParsedTorrentFile};
 use crate::db::repository;
 use crate::error::CmdResult;
@@ -75,19 +75,6 @@ pub async fn save_resource_files(
         .map(|f| (f.name.clone(), f.size))
         .collect();
     repository::torrent_files::save(&state.db, rid, payload.item_id, &files).await?;
-    Ok(())
-}
-
-/// 清除文件列表缓存（文章管理权限）
-#[tauri::command]
-pub async fn clear_resource_files(
-    state: State<'_, AppState>,
-    rid: i64,
-    item_id: Option<i64>,
-) -> CmdResult<()> {
-    require_feature(&state.db, &state.auth, FEATURE_ARTICLE_OWN).await?;
-    let item_id = item_id.unwrap_or(0);
-    repository::torrent_files::clear(&state.db, rid, item_id).await?;
     Ok(())
 }
 

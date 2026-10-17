@@ -14,6 +14,8 @@ const PUBLIC_KEYS: &[&str] = &[
     "logo_mode",
     "logo_image_path",
     "logo_icon_path",
+    "list_page_size",
+    "list_infinite_scroll",
 ];
 
 #[tauri::command]
@@ -29,6 +31,9 @@ pub async fn get_public_settings(state: State<'_, AppState>) -> CmdResult<HashMa
         ("logo_mode", "text"),
         ("logo_image_path", ""),
         ("logo_icon_path", ""),
+        // 与前端 ResourceList 的兜底值保持一致
+        ("list_page_size", "24"),
+        ("list_infinite_scroll", "1"),
     ];
     for key in PUBLIC_KEYS {
         let default = defaults.iter().find(|(k, _)| k == key).map(|(_, d)| *d).unwrap_or("");
@@ -43,8 +48,11 @@ pub async fn get_public_settings(state: State<'_, AppState>) -> CmdResult<HashMa
         "perm_tag",
         "perm_trash",
         "perm_user",
+        "perm_translate",
     ] {
-        public.insert(key.into(), all.get(key).cloned().unwrap_or_else(|| "5".into()));
+        // translate 默认 0（所有登录用户可用，key 由管理员统一提供）；其余默认 5（仅管理员）
+        let default = if key == "perm_translate" { "0" } else { "5" };
+        public.insert(key.into(), all.get(key).cloned().unwrap_or_else(|| default.into()));
     }
     Ok(public)
 }
@@ -52,7 +60,12 @@ pub async fn get_public_settings(state: State<'_, AppState>) -> CmdResult<HashMa
 #[tauri::command]
 pub async fn get_settings(state: State<'_, AppState>) -> CmdResult<HashMap<String, String>> {
     let _user = require_admin(&state.auth).await?;
-    Ok(repository::settings::get_all(&state.db).await?)
+    let mut all = repository::settings::get_all(&state.db).await?;
+    // 翻译 API Key 不下发到前端：它由后端直接读库使用，前端任何地方都不需要明文。
+    // Key 按服务商分桶存放（translate_api_key_<provider>），这里**按前缀整体剔除**，
+    // 新增服务商时不必再改这行。管理员看到的是 has_api_key + 末 4 位（get_translate_config 提供）。
+    all.retain(|k, _| !crate::translate::is_api_key_setting(k));
+    Ok(all)
 }
 
 #[tauri::command]
@@ -61,6 +74,10 @@ pub async fn update_settings(
     mut settings: HashMap<String, String>,
 ) -> CmdResult<()> {
     let _user = require_admin(&state.auth).await?;
+    // 防御：历史遗留的派生键不接受前端写入（库里本就不存在，这里只是兜底）。
+    // 注意 API Key 的分桶键 `translate_api_key_<provider>` 是**允许写入**的正常设置项。
+    settings.remove("translate_api_key_set");
+    settings.remove("translate_api_key_tail");
     // 校验权限阈值
     for key in [
         "perm_article_own",
@@ -70,6 +87,7 @@ pub async fn update_settings(
         "perm_tag",
         "perm_trash",
         "perm_user",
+        "perm_translate",
     ] {
         if let Some(v) = settings.get(key) {
             let n: i64 = v.parse().map_err(|_| {
@@ -78,6 +96,20 @@ pub async fn update_settings(
             if !(0..=5).contains(&n) {
                 return Err(crate::error::AppError::BadRequest("权限值必须为 0-5".into()));
             }
+        }
+    }
+    // 翻译批大小：必须是数字且在允许范围内。
+    // 这里拦下来是为了给管理员一句明确的报错；库里的脏数据另有 parse_batch_chars 兜底。
+    if let Some(v) = settings.get("translate_batch_chars") {
+        let n: usize = v
+            .trim()
+            .parse()
+            .map_err(|_| AppError::BadRequest("「每批最大字数」必须是数字".into()))?;
+        let (lo, hi) = (crate::translate::MIN_BATCH_CHARS, crate::translate::MAX_BATCH_CHARS);
+        if !(lo..=hi).contains(&n) {
+            return Err(AppError::BadRequest(format!(
+                "「每批最大字数」需在 {lo} - {hi} 之间"
+            )));
         }
     }
     // LOGO 模式校验
@@ -127,7 +159,7 @@ pub async fn update_settings(
     }
     // 代理设置变更：重建 HTTP 客户端
     if settings.contains_key("proxy_mode") || settings.contains_key("proxy_url") {
-        crate::commands::collector::apply_proxy_settings(&state).await;
+        crate::collector::http::apply_proxy_settings(&state).await;
     }
     Ok(())
 }
@@ -145,7 +177,7 @@ pub async fn get_proxy_status(
     let custom = repository::settings::get(&state.db, "proxy_url")
         .await?
         .unwrap_or_default();
-    let effective = crate::commands::collector::current_effective_proxy(&state).await;
+    let effective = crate::collector::http::current_effective_proxy(&state).await;
     out.insert("mode".into(), mode);
     out.insert("custom_url".into(), custom);
     out.insert("effective".into(), effective.unwrap_or_else(|| "直连（无代理）".into()));

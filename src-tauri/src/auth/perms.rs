@@ -2,8 +2,9 @@
 //
 // 功能权限（管理操作）：settings 中的 perm_* 阈值（0-5，默认 5），
 //   管理员恒通过；其他用户需 permission_level >= 阈值；阈值 0 = 任何登录用户。
-// 阅读权限（资源）：resources.read_level，
-//   0 = 公开（无需登录）；>0 需读者等级 >= read_level，或凭访问密码已解锁。
+// 阅读权限（资源）：resources.read_level，0 = 公开（无需登录）；>0 需读者等级 >= read_level。
+// 阅读权限（合集）：collections.visibility（public / private），私有仅本人、管理员可见。
+// 两者都可叠加访问密码：一旦设置，除作者本人与管理员外，所有人都必须凭密码解锁。
 use sqlx::SqlitePool;
 
 use crate::db::repository;
@@ -21,6 +22,11 @@ pub const FEATURE_COLLECTION: &str = "perm_collection";
 pub const FEATURE_TAG: &str = "perm_tag";
 pub const FEATURE_TRASH: &str = "perm_trash";
 pub const FEATURE_USER: &str = "perm_user";
+/// 使用翻译功能（阈值 0 = 所有登录用户；默认 0，因为 key 由管理员统一提供）
+pub const FEATURE_TRANSLATE: &str = "perm_translate";
+
+/// 合集可见性：公开（任何人可访问）
+pub const VISIBILITY_PUBLIC: &str = "public";
 
 /// 当前访问者的阅读等级：未登录 = 0
 pub async fn viewer_level(auth: &AuthState) -> i64 {
@@ -54,28 +60,71 @@ pub async fn require_feature(
     }
 }
 
+/// 门禁第一段：作者本人与管理员恒放行（否则作者会被自己设的密码挡在门外）
+fn is_owner_or_admin(session: Option<&UserSession>, owner_id: Option<i64>) -> bool {
+    session.is_some_and(|s| s.is_admin || owner_id == Some(s.id))
+}
+
+/// 门禁第二段：设了访问密码就必须已凭密码解锁。
+/// Some = 已由密码判定出结果；None = 未设密码，交给内容自身的规则继续判定
+fn password_gate(locked: bool, granted: bool) -> Option<CmdResult<()>> {
+    if !locked {
+        return None;
+    }
+    Some(if granted {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden)
+    })
+}
+
 /// 确保当前访问者可以阅读指定资源，否则 Forbidden
+///
+/// 判定顺序：作者/管理员 → 访问密码 → 阅读等级（未登录 = 0）
 pub async fn ensure_readable(
     auth: &AuthState,
     resource: &repository::resources::Resource,
 ) -> CmdResult<()> {
-    // 公开资源
-    if resource.read_level <= 0 {
+    let session = auth.current().await;
+    if is_owner_or_admin(session.as_ref(), resource.user_id) {
         return Ok(());
     }
-    let session = match auth.current().await {
-        Some(s) => s,
-        None => return Err(AppError::Forbidden),
-    };
-    // 等级足够（管理员恒足够）
-    if session.effective_level() >= resource.read_level {
+    if let Some(result) = password_gate(
+        !resource.access_password.is_empty(),
+        auth.is_granted_resource(resource.id).await,
+    ) {
+        return result;
+    }
+    // 未设密码：阅读等级足够即可（未登录 = 0）
+    let level = session.as_ref().map(|s| s.effective_level()).unwrap_or(0);
+    if level >= resource.read_level {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden)
+    }
+}
+
+/// 确保当前访问者可以阅读指定合集，否则 Forbidden
+///
+/// 判定顺序与资源一致，只是把末位的「阅读等级」换成「公开 / 私有」
+pub async fn ensure_collection_readable(
+    auth: &AuthState,
+    collection: &repository::collections::Collection,
+) -> CmdResult<()> {
+    let session = auth.current().await;
+    if is_owner_or_admin(session.as_ref(), collection.user_id) {
         return Ok(());
     }
-    // 已通过访问密码解锁
-    if !resource.access_password.is_empty()
-        && auth.is_granted_resource(resource.id).await
-    {
-        return Ok(());
+    if let Some(result) = password_gate(
+        !collection.access_password.is_empty(),
+        auth.is_granted_collection(collection.id).await,
+    ) {
+        return result;
     }
-    Err(AppError::Forbidden)
+    // 未设密码：只有公开合集可读
+    if collection.visibility == VISIBILITY_PUBLIC {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden)
+    }
 }

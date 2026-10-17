@@ -106,6 +106,36 @@ async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> Result<b
     Ok(count > 0)
 }
 
+/// 历史数据升级：旧版本把访问密码当明文直接落库，这里补算成 argon2 哈希（幂等）。
+/// 已是 PHC 哈希（形如 $argon2...）的行跳过，因此每次启动执行也无害。
+async fn hash_legacy_access_passwords(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    for table in ["resources", "collections"] {
+        let rows: Vec<(i64, String)> = sqlx::query_as(&format!(
+            "SELECT id, access_password FROM {table} WHERE access_password <> ''"
+        ))
+        .fetch_all(pool)
+        .await?;
+        for (id, password) in rows {
+            if password.starts_with('$') {
+                continue;
+            }
+            match crate::auth::hash_access_password(&password) {
+                Ok(hashed) => {
+                    sqlx::query(&format!("UPDATE {table} SET access_password = ? WHERE id = ?"))
+                        .bind(hashed)
+                        .bind(id)
+                        .execute(pool)
+                        .await?;
+                }
+                Err(e) => {
+                    tracing::warn!("升级 {table}#{id} 的访问密码失败: {}", e);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     // 0001/0002：建表与索引（全部 IF NOT EXISTS，幂等），逐条执行，错误直接返回
     exec_script(pool, include_str!("migrations/0001_init.sql"), true).await?;
@@ -160,5 +190,8 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     )
     .execute(pool)
     .await;
+
+    // 访问密码：把历史明文密码补算为 argon2 哈希
+    hash_legacy_access_passwords(pool).await?;
     Ok(())
 }

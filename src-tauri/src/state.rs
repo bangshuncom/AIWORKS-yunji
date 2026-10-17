@@ -1,4 +1,5 @@
 // 应用全局状态
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use sqlx::SqlitePool;
 use std::path::PathBuf;
@@ -13,11 +14,12 @@ pub struct AppState {
     pub storage: Arc<StorageState>,
     pub data_dir: PathBuf,
     pub upload_base_dir: PathBuf,
+    /// 翻译取消标志：前端点「取消」时置位，翻译流程每翻完一块检查一次
+    pub translate_cancel: Arc<AtomicBool>,
 }
 
 impl AppState {
     pub fn new(db: SqlitePool, storage: StorageRef, data_dir: PathBuf) -> Self {
-        // 通过 trait 方法获取上传根目录（local 后端返回 upload_dir；其他后端回退到 data_dir/uploads）
         let upload_base_dir = storage.upload_dir().to_path_buf();
         Self {
             db,
@@ -25,6 +27,7 @@ impl AppState {
             storage: Arc::new(StorageState::new(storage)),
             data_dir,
             upload_base_dir,
+            translate_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 

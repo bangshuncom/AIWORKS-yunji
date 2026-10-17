@@ -9,7 +9,12 @@ pub struct Collection {
     pub title: String,
     pub description: String,
     pub visibility: String,
+    /// 访问密码哈希：仅服务端使用，不下发给前端
+    #[serde(skip_serializing)]
     pub access_password: String,
+    /// 前端展示用：是否设置了访问密码
+    #[serde(default)]
+    pub has_password: bool,
     pub thumbnail_path: String,
     pub content: String,
     pub created_at: String,
@@ -39,7 +44,9 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Collection>, AppError> {
         &format!(
             "SELECT c.id, c.title, c.description, c.visibility, c.access_password, c.thumbnail_path, \
              c.content, c.created_at, c.updated_at, c.deleted_at, \
-             (SELECT COUNT(*) FROM resource_collections rc WHERE rc.collection_id = c.id) as resource_count, \
+             (SELECT COUNT(*) FROM resource_collections rc \
+              JOIN resources r ON r.id = rc.resource_id AND r.deleted_at IS NULL \
+              WHERE rc.collection_id = c.id) as resource_count, \
              c.user_id, \
              COALESCE(NULLIF(c.thumbnail_path, ''), {FIRST_COVER_SUB}) as cover_path \
              FROM collections c WHERE c.deleted_at IS NULL ORDER BY c.created_at DESC",
@@ -53,7 +60,7 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Collection>, AppError> {
         .map(
             |(id, title, description, visibility, access_password, thumbnail_path, content, created_at, updated_at, deleted_at, resource_count, user_id, cover_path)| {
                 Collection {
-                    id, title, description, visibility, access_password, thumbnail_path,
+                    id, title, description, visibility, has_password: !access_password.is_empty(), access_password, thumbnail_path,
                     content, created_at, updated_at, deleted_at, resource_count, user_id, cover_path,
                 }
             },
@@ -88,7 +95,9 @@ pub async fn list_paged(
     let base = &format!(
         "SELECT c.id, c.title, c.description, c.visibility, c.access_password, c.thumbnail_path, \
          c.content, c.created_at, c.updated_at, c.deleted_at, \
-         (SELECT COUNT(*) FROM resource_collections rc WHERE rc.collection_id = c.id) as resource_count, \
+         (SELECT COUNT(*) FROM resource_collections rc \
+          JOIN resources r ON r.id = rc.resource_id AND r.deleted_at IS NULL \
+          WHERE rc.collection_id = c.id) as resource_count, \
          c.user_id, \
          COALESCE(NULLIF(c.thumbnail_path, ''), {FIRST_COVER_SUB}) as cover_path \
          FROM collections c WHERE c.deleted_at IS NULL",
@@ -115,7 +124,7 @@ pub async fn list_paged(
             .map(
                 |(id, title, description, visibility, access_password, thumbnail_path, content, created_at, updated_at, deleted_at, resource_count, user_id, cover_path)| {
                     Collection {
-                        id, title, description, visibility, access_password, thumbnail_path,
+                        id, title, description, visibility, has_password: !access_password.is_empty(), access_password, thumbnail_path,
                         content, created_at, updated_at, deleted_at, resource_count, user_id, cover_path,
                     }
                 },
@@ -133,7 +142,9 @@ pub async fn get(pool: &SqlitePool, cid: i64) -> Result<Collection, AppError> {
         &format!(
             "SELECT c.id, c.title, c.description, c.visibility, c.access_password, c.thumbnail_path, \
              c.content, c.created_at, c.updated_at, c.deleted_at, \
-             (SELECT COUNT(*) FROM resource_collections rc WHERE rc.collection_id = c.id) as resource_count, \
+             (SELECT COUNT(*) FROM resource_collections rc \
+              JOIN resources r ON r.id = rc.resource_id AND r.deleted_at IS NULL \
+              WHERE rc.collection_id = c.id) as resource_count, \
              c.user_id, \
              COALESCE(NULLIF(c.thumbnail_path, ''), {FIRST_COVER_SUB}) as cover_path \
              FROM collections c WHERE c.id = ? AND c.deleted_at IS NULL",
@@ -147,7 +158,7 @@ pub async fn get(pool: &SqlitePool, cid: i64) -> Result<Collection, AppError> {
     let (id, title, description, visibility, access_password, thumbnail_path, content, created_at, updated_at, deleted_at, resource_count, user_id, cover_path) = row;
 
     Ok(Collection {
-        id, title, description, visibility, access_password, thumbnail_path,
+        id, title, description, visibility, has_password: !access_password.is_empty(), access_password, thumbnail_path,
         content, created_at, updated_at, deleted_at, resource_count, user_id, cover_path,
     })
 }
@@ -157,7 +168,11 @@ pub struct CreateCollection {
     pub title: String,
     pub description: String,
     pub visibility: Option<String>,
+    /// 访问密码：留空 = 不改动（新建即不设密码）；非空 = 设置新密码
     pub access_password: String,
+    /// 显式清除访问密码
+    #[serde(default)]
+    pub clear_password: Option<bool>,
     pub thumbnail_path: String,
     #[serde(default)]
     pub content: String,
@@ -175,7 +190,8 @@ pub async fn create(pool: &SqlitePool, payload: &CreateCollection, user_id: i64)
     .bind(&payload.title)
     .bind(&payload.description)
     .bind(payload.visibility.as_deref().unwrap_or("private"))
-    .bind(&payload.access_password)
+    // 访问密码：空 = 不设；非空 = 存 argon2 哈希
+    .bind(crate::auth::hash_access_password(&payload.access_password)?)
     .bind(&payload.thumbnail_path)
     .bind(&payload.content)
     .bind(user_id)
@@ -188,20 +204,38 @@ pub async fn create(pool: &SqlitePool, payload: &CreateCollection, user_id: i64)
 
 pub async fn update(pool: &SqlitePool, cid: i64, payload: &CreateCollection) -> Result<(), AppError> {
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    // 访问密码三种语义：clear_password = 清除；非空 = 设置新密码；留空 = 保持原密码不变
+    let password = if payload.clear_password == Some(true) {
+        Some(String::new())
+    } else if payload.access_password.is_empty() {
+        None
+    } else {
+        Some(crate::auth::hash_access_password(&payload.access_password)?)
+    };
+
     sqlx::query(
-        "UPDATE collections SET title=?, description=?, visibility=?, access_password=?, thumbnail_path=?, content=?, updated_at=? \
+        "UPDATE collections SET title=?, description=?, visibility=?, thumbnail_path=?, content=?, updated_at=? \
          WHERE id=? AND deleted_at IS NULL",
     )
     .bind(&payload.title)
     .bind(&payload.description)
     .bind(payload.visibility.as_deref().unwrap_or("private"))
-    .bind(&payload.access_password)
     .bind(&payload.thumbnail_path)
     .bind(&payload.content)
     .bind(&now)
     .bind(cid)
     .execute(pool)
     .await?;
+
+    // 密码单独更新：留空（不改动）时跳过，避免把已有密码冲掉
+    if let Some(pwd) = password {
+        sqlx::query("UPDATE collections SET access_password=?, updated_at=? WHERE id=? AND deleted_at IS NULL")
+            .bind(pwd)
+            .bind(&now)
+            .bind(cid)
+            .execute(pool)
+            .await?;
+    }
     Ok(())
 }
 
@@ -249,16 +283,6 @@ pub async fn sync_resources(pool: &SqlitePool, cid: i64, resource_ids: &[i64]) -
     Ok(())
 }
 
-pub async fn list_resource_ids(pool: &SqlitePool, cid: i64) -> Result<Vec<i64>, AppError> {
-    let rows: Vec<(i64,)> = sqlx::query_as(
-        "SELECT resource_id FROM resource_collections WHERE collection_id=? ORDER BY sort_order",
-    )
-    .bind(cid)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.into_iter().map(|(id,)| id).collect())
-}
-
 /// 为资源同步合集关联（以资源的视角：该资源属于哪些合集）
 pub async fn sync_resource_collections(
     pool: &SqlitePool,
@@ -278,4 +302,76 @@ pub async fn sync_resource_collections(
             .await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::repository::testkit::*;
+
+    /// 列表 / 分页 / 单条三条路径各有一份资源计数子查询，改动时必须一起改，所以三条都验
+    async fn counts_of(pool: &SqlitePool, cid: i64) -> (i64, i64, i64) {
+        let from_list = list(pool)
+            .await
+            .expect("合集列表")
+            .into_iter()
+            .find(|c| c.id == cid)
+            .expect("合集应存在")
+            .resource_count;
+        let from_paged = list_paged(pool, 50, 0, None)
+            .await
+            .expect("合集分页")
+            .items
+            .into_iter()
+            .find(|c| c.id == cid)
+            .expect("合集应存在")
+            .resource_count;
+        let from_get = get(pool, cid).await.expect("合集详情").resource_count;
+        (from_list, from_paged, from_get)
+    }
+
+    /// 回归：合集里的文章移入回收站后，资源数必须立刻减少
+    #[tokio::test]
+    async fn count_ignores_soft_deleted_resources() {
+        let pool = memory_pool().await;
+        let col = insert_collection(&pool, "合集A").await;
+        let r1 = insert_resource(&pool, "文章1").await;
+        let r2 = insert_resource(&pool, "文章2").await;
+        attach_collection(&pool, r1, col).await;
+        attach_collection(&pool, r2, col).await;
+        assert_eq!(counts_of(&pool, col).await, (2, 2, 2));
+
+        soft_delete_resource(&pool, r1).await;
+        assert_eq!(
+            counts_of(&pool, col).await,
+            (1, 1, 1),
+            "移入回收站的文章不应计入合集资源数"
+        );
+
+        restore_resource(&pool, r1).await;
+        assert_eq!(counts_of(&pool, col).await, (2, 2, 2), "恢复后应加回来");
+
+        soft_delete_resource(&pool, r1).await;
+        hard_delete_resource(&pool, r1).await;
+        assert_eq!(counts_of(&pool, col).await, (1, 1, 1));
+    }
+
+    /// 合集封面回退（FIRST_COVER_SUB）同样不能让回收站里的文章当封面
+    #[tokio::test]
+    async fn cover_falls_back_past_soft_deleted() {
+        let pool = memory_pool().await;
+        let col = insert_collection(&pool, "合集A").await;
+        let r1 = insert_resource(&pool, "文章1").await;
+        let r2 = insert_resource(&pool, "文章2").await;
+        set_thumbnail(&pool, r1, "covers/1.jpg").await;
+        set_thumbnail(&pool, r2, "covers/2.jpg").await;
+        attach_collection(&pool, r1, col).await;
+        attach_collection(&pool, r2, col).await;
+
+        assert_eq!(get(&pool, col).await.expect("详情").cover_path, "covers/1.jpg");
+
+        // 首篇进回收站 → 封面回退到第二篇，而不是继续用回收站里的图
+        soft_delete_resource(&pool, r1).await;
+        assert_eq!(get(&pool, col).await.expect("详情").cover_path, "covers/2.jpg");
+    }
 }

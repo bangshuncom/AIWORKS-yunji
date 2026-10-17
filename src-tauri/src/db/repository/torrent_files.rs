@@ -86,19 +86,3 @@ pub async fn save(
     Ok(())
 }
 
-/// 清除文件列表
-pub async fn clear(pool: &SqlitePool, rid: i64, item_id: i64) -> Result<(), AppError> {
-    if item_id > 0 {
-        sqlx::query("DELETE FROM resource_files WHERE resource_id=? AND item_id=?")
-            .bind(rid)
-            .bind(item_id)
-            .execute(pool)
-            .await?;
-    } else {
-        sqlx::query("DELETE FROM resource_files WHERE resource_id=?")
-            .bind(rid)
-            .execute(pool)
-            .await?;
-    }
-    Ok(())
-}
