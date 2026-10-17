@@ -1,4 +1,4 @@
-// 标签管理页
+// {t('tags.title')}页
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -29,11 +29,13 @@ import { CardContextMenu } from '../components/CardContextMenu';
 import { Pagination } from '../components/Pagination';
 import { useSharedStyles } from '../styles/shared';
 import { usePerms } from '../hooks/usePerms';
+import { useLanguage } from '../i18n';
 
 const PAGE_SIZE = 100;
 
 export function TagsPage() {
   const s = useSharedStyles();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canTag = usePerms().can('tag');
@@ -110,18 +112,18 @@ export function TagsPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (await confirmDanger('确认删除该标签？关联资源不会被删除。')) deleteMut.mutate(id);
+    if (await confirmDanger(t('tags.confirmDelete'))) deleteMut.mutate(id);
   };
 
   const batchDelete = () =>
     runBatchAction(
       selection,
-      (n) => `确认删除选中的 ${n} 个标签？关联资源不会被删除。`,
+      (n) => t('tags.batchDeleteConfirm', { n }),
       (id) => tagApi.delete(id),
       () => queryClient.invalidateQueries({ queryKey: ['tags'] }),
     );
 
-  // 合并选中的标签：除目标标签外，其余选中标签作为源被删除
+  // {t('tags.mergeButton')}选中的标签：除目标标签外，其余选中标签作为源被删除
   const handleMerge = () => {
     if (mergeTarget == null) return;
     const sourceIds = Array.from(selection.selected).filter((id) => id !== mergeTarget);
@@ -145,18 +147,18 @@ export function TagsPage() {
   return (
     <div className={s.pageContainer}>
       <div className={s.pageHeader}>
-        <h2 style={{ margin: 0 }}>标签管理</h2>
+        <h2 style={{ margin: 0 }}>{t('tags.title')}</h2>
       </div>
 
       {canTag && (
         <form onSubmit={handleCreate} className={s.field} style={{ maxWidth: '400px' }}>
-          <Label htmlFor="new-tag">新建标签</Label>
+          <Label htmlFor="new-tag">{t('tags.newLabel')}</Label>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Input
               id="new-tag"
               value={newName}
               onChange={(_, d) => setNewName(d.value)}
-              placeholder="标签名"
+              placeholder={t('tags.namePlaceholder')}
               style={{ flex: 1 }}
             />
             <Button
@@ -165,17 +167,17 @@ export function TagsPage() {
               icon={<AddRegular />}
               disabled={!newName.trim() || createMut.isPending}
             >
-              新建
+              {t('tags.newButton')}
             </Button>
           </div>
         </form>
       )}
 
       {isLoading ? (
-        <Spinner label="加载中..." />
+        <Spinner label={t('common.loading')} />
       ) : !tags || tags.length === 0 ? (
         <Card>
-          <CardHeader header={<span>暂无标签</span>} />
+          <CardHeader header={<span>{t('tags.empty')}</span>} />
         </Card>
       ) : (
         <>
@@ -188,12 +190,12 @@ export function TagsPage() {
                     ? [
                         {
                           icon: <RenameRegular />,
-                          label: '重命名',
+                          label: t('tags.rename'),
                           onClick: () => openRename(tag),
                         },
                         {
                           icon: <DeleteRegular />,
-                          label: '删除',
+                          label: t('common.delete'),
                           danger: true,
                           onClick: () => handleDelete(tag.id),
                         },
@@ -213,7 +215,7 @@ export function TagsPage() {
                       {tag.name}
                     </span>
                     <Badge appearance="filled" color="informative">
-                      {tag.count ?? 0} 资源
+                      {tag.count ?? 0} {t('tags.resource')}
                     </Badge>
                   </div>
                 </div>
@@ -246,46 +248,44 @@ export function TagsPage() {
             onClick={openMergeDialog}
             disabled={selection.size < 2 || mergeMut.isPending}
           >
-            合并标签
+            {t('tags.merge')}
           </Button>
           <Button appearance="primary" size="small" icon={<DeleteRegular />} onClick={batchDelete}>
-            批量删除
+            {t('tags.batchDelete')}
           </Button>
         </BatchBar>
       )}
 
-      {/* 重命名对话框 */}
+      {/* {t('tags.rename')}对话框 */}
       <Dialog open={renameOpen} onOpenChange={(_, e: DialogOpenChangeData) => setRenameOpen(e.open)}>
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>重命名标签</DialogTitle>
+            <DialogTitle>{t('tags.renameDialog')}</DialogTitle>
             <DialogContent>
               <div className={s.field}>
-                <Label htmlFor="rename-input">新名称</Label>
+                <Label htmlFor="rename-input">{t('tags.newName')}</Label>
                 <Input id="rename-input" value={renameValue} onChange={(_, d) => setRenameValue(d.value)} />
               </div>
             </DialogContent>
             <DialogActions>
               <DialogTrigger>
-                <Button appearance="secondary">取消</Button>
+                <Button appearance="secondary">{t('common.cancel')}</Button>
               </DialogTrigger>
               <Button appearance="primary" onClick={handleRename} disabled={renameMut.isPending || !renameValue.trim()}>
-                保存
+                {t('common.save')}
               </Button>
             </DialogActions>
           </DialogBody>
         </DialogSurface>
       </Dialog>
 
-      {/* 合并对话框 */}
+      {/* {t('tags.mergeButton')}对话框 */}
       <Dialog open={mergeOpen} onOpenChange={(_, e: DialogOpenChangeData) => setMergeOpen(e.open)}>
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>合并选中标签</DialogTitle>
+            <DialogTitle>{t('tags.mergeDialog')}</DialogTitle>
             <DialogContent>
-              <p style={{ marginTop: 0, color: tokens.colorNeutralForeground2 }}>
-                选择目标标签，其他选中标签的资源将合并到该标签下，源标签将被删除。
-              </p>
+              <p style={{ marginTop: 0, color: tokens.colorNeutralForeground2 }}>{t('tags.mergeDesc')}</p>
               <div
                 style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}
               >
@@ -318,10 +318,10 @@ export function TagsPage() {
             </DialogContent>
             <DialogActions>
               <DialogTrigger>
-                <Button appearance="secondary">取消</Button>
+                <Button appearance="secondary">{t('common.cancel')}</Button>
               </DialogTrigger>
               <Button appearance="primary" onClick={handleMerge} disabled={mergeMut.isPending || mergeTarget == null}>
-                合并
+                {t('tags.mergeButton')}
               </Button>
             </DialogActions>
           </DialogBody>

@@ -1,6 +1,7 @@
 // 统一批量选择：useSelection hook + CardCheckbox（卡片勾选）+ BatchBar（浮动操作栏）
 import { useCallback, useMemo, useState } from 'react';
 import { confirmDanger } from '../lib/dialog';
+import { useLanguage } from '../i18n';
 import type { ReactNode } from 'react';
 import { Button, Badge, Checkbox, makeStyles, tokens } from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
@@ -167,20 +168,21 @@ export function BatchBar({
   busy,
 }: BatchBarProps) {
   const styles = useBarStyles();
+  const { t } = useLanguage();
   if (selectedCount === 0) return null;
   return (
     <div className={styles.bar}>
       <Checkbox
         checked={allChecked}
         onChange={(_, d) => onSelectAll(d.checked === true)}
-        label={`全选（${total}）`}
+        label={t('batchBar.selectAll', { n: total })}
         disabled={busy}
       />
       <Button appearance="outline" size="small" onClick={onInvert} disabled={busy}>
-        反选
+        {t('batchBar.invert')}
       </Button>
       <Badge appearance="filled" color="brand">
-        已选 {selectedCount}
+        {t('batchBar.selected', { n: selectedCount })}
       </Badge>
       <span className={styles.actions}>{children}</span>
       <Button
@@ -190,7 +192,7 @@ export function BatchBar({
         icon={<DismissRegular />}
         onClick={onClear}
         disabled={busy}
-        title="取消选择"
+        title={t('batchBar.clear')}
       />
     </div>
   );

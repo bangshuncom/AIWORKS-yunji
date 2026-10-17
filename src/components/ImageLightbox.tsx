@@ -3,6 +3,7 @@
 import { useEffect, useCallback } from 'react';
 import { Button, makeStyles } from '@fluentui/react-components';
 import { ChevronLeftRegular, ChevronRightRegular, DismissRegular } from '@fluentui/react-icons';
+import { useLanguage } from '../i18n';
 
 const useStyles = makeStyles({
   overlay: {
@@ -48,6 +49,7 @@ export interface ImageLightboxProps {
 export function ImageLightbox({ images, index, onIndexChange, onClose }: ImageLightboxProps) {
   const styles = useStyles();
   const total = images.length;
+  const { t } = useLanguage();
   const current = images[index];
 
   const prev = useCallback(() => {
@@ -86,7 +88,12 @@ export function ImageLightbox({ images, index, onIndexChange, onClose }: ImageLi
           }}
         />
       )}
-      <img className={styles.overlayImg} src={current} alt={`预览 ${index + 1}`} onClick={(e) => e.stopPropagation()} />
+      <img
+        className={styles.overlayImg}
+        src={current}
+        alt={t('lightbox.preview', { n: index + 1 })}
+        onClick={(e) => e.stopPropagation()}
+      />
       {total > 1 && (
         <Button
           style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '24px', zIndex: 1001 }}

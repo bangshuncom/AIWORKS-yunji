@@ -13,6 +13,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { KeyRegular } from '@fluentui/react-icons';
+import { useLanguage } from '../../i18n';
 
 export interface PasswordDialogProps {
   open: boolean;
@@ -33,6 +34,7 @@ export function PasswordDialog({ open, title, onSubmit, onUnlocked, onClose }: P
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const { t } = useLanguage();
 
   // 每次打开时重置输入
   useEffect(() => {
@@ -52,10 +54,10 @@ export function PasswordDialog({ open, title, onSubmit, onUnlocked, onClose }: P
         onUnlocked();
         onClose();
       } else {
-        setError('密码错误');
+        setError(t('password.wrong'));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : '校验失败');
+      setError(e instanceof Error ? e.message : t('password.checkFailed'));
     } finally {
       setBusy(false);
     }
@@ -69,12 +71,12 @@ export function PasswordDialog({ open, title, onSubmit, onUnlocked, onClose }: P
           <DialogContent>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                输入访问密码后即可查看；没有密码或权限不足时无法访问。
+                {t('password.hint')}
               </Text>
               <Input
                 type="password"
                 autoFocus
-                placeholder="访问密码"
+                placeholder={t('password.placeholder')}
                 value={password}
                 onChange={(_, d) => setPassword(d.value)}
                 onKeyDown={(e) => {
@@ -91,10 +93,10 @@ export function PasswordDialog({ open, title, onSubmit, onUnlocked, onClose }: P
           </DialogContent>
           <DialogActions>
             <Button appearance="secondary" onClick={onClose}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button appearance="primary" disabled={!password.trim() || busy} onClick={() => void submit()}>
-              {busy ? '校验中...' : '解锁'}
+              {busy ? t('password.checking') : t('password.unlock')}
             </Button>
           </DialogActions>
         </DialogBody>

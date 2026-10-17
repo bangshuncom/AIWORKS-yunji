@@ -1,4 +1,4 @@
-// 资源批量操作组件：状态/可见性/密码/分类/合集，放入 BatchBar 的 children
+// 资源批量操作组件：状态/可见性/{t('auth.password')}/分类/{t('filter.collection')}，放入 BatchBar 的 children
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -23,6 +23,7 @@ import { invalidateArticleData } from '../lib/invalidate';
 import type { Collection, Category, AuthorInfo } from '../types/models';
 import type { SelectionController } from './Selection';
 import { CategoryTreeSelect } from './CategoryTreeSelect';
+import { useLanguage } from '../i18n';
 
 interface BatchResourceOpsProps {
   selection: SelectionController;
@@ -30,6 +31,7 @@ interface BatchResourceOpsProps {
 
 export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
   const queryClient = useQueryClient();
+  const { t } = useLanguage();
   const [pwdOpen, setPwdOpen] = useState(false);
   const [pwdValue, setPwdValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -50,7 +52,7 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
   });
 
   const invalidate = () => {
-    // 批量改分类/合集/作者/阅读权限都会影响各处的计数与列表，统一失效
+    // 批量改分类/{t('filter.collection')}/{t('filter.author')}/{t('edit.readPermission')}都会影响各处的计数与列表，统一失效
     invalidateArticleData(queryClient);
   };
 
@@ -74,33 +76,31 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
 
   return (
     <>
-      {/* 阅读权限 */}
+      {/* {t('edit.readPermission')} */}
       <Menu>
         <MenuTrigger>
           <Button {...btnProps} icon={<ShieldRegular />}>
-            阅读权限
+            {t('edit.readPermission')}
           </Button>
         </MenuTrigger>
         <MenuPopover>
           <MenuList>
-            <MenuItem onClick={() => doBatchUpdate({ read_level: 0 }, `将 ${ids.length} 项设为公开（无需登录）？`)}>
-              0 - 公开（无需登录）
+            <MenuItem onClick={() => doBatchUpdate({ read_level: 0 }, t('batch.setPublic', { n: ids.length }))}>
+              0 - {t('edit.readLevel.public')}
             </MenuItem>
             {[1, 2, 3, 4, 5].map((n) => (
               <MenuItem
                 key={n}
-                onClick={() =>
-                  doBatchUpdate({ read_level: n }, `将 ${ids.length} 项阅读权限设为 ${n}（需权限 ${n} 及以上）？`)
-                }
+                onClick={() => doBatchUpdate({ read_level: n }, t('batch.setLevel', { n: ids.length, level: n }))}
               >
-                {n} - 需权限 {n} 及以上
+                {n} - {t('edit.readLevel.need', { level: n })}
               </MenuItem>
             ))}
           </MenuList>
         </MenuPopover>
       </Menu>
 
-      {/* 密码 */}
+      {/* {t('auth.password')} */}
       <Button
         {...btnProps}
         icon={<KeyRegular />}
@@ -109,15 +109,15 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
           setPwdOpen(true);
         }}
       >
-        密码
+        {t('auth.password')}
       </Button>
       <Dialog open={pwdOpen} onOpenChange={(_, d) => setPwdOpen(d.open)}>
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>设置访问密码（{ids.length} 项）</DialogTitle>
+            <DialogTitle>{t('batch.setPwdTitle', { n: ids.length })}</DialogTitle>
             <DialogContent>
               <Input
-                placeholder="输入密码，留空则清除密码"
+                placeholder={t('batch.pwdPlaceholder')}
                 value={pwdValue}
                 onChange={(_, d) => setPwdValue(d.value)}
                 type="password"
@@ -126,7 +126,7 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
             </DialogContent>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px' }}>
               <Button appearance="subtle" onClick={() => setPwdOpen(false)}>
-                取消
+                {t('common.cancel')}
               </Button>
               <Button
                 appearance="primary"
@@ -134,11 +134,13 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
                   setPwdOpen(false);
                   await doBatchUpdate(
                     { access_password: pwdValue },
-                    pwdValue ? `为 ${ids.length} 项设置访问密码？` : `清除 ${ids.length} 项的访问密码？`,
+                    pwdValue
+                      ? t('batch.setPwdConfirm', { n: ids.length })
+                      : t('batch.clearPwdConfirm', { n: ids.length }),
                   );
                 }}
               >
-                确定
+                {t('batch.confirm')}
               </Button>
             </div>
           </DialogBody>
@@ -152,21 +154,23 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
         onChange={(id) => {
           doBatchUpdate(
             { category_id: id },
-            id != null ? `将 ${ids.length} 项分类修改为此分类？` : `清除 ${ids.length} 项的分类？`,
+            id != null
+              ? t('batch.setCategoryConfirm', { n: ids.length })
+              : t('batch.clearCategoryConfirm', { n: ids.length }),
           );
         }}
-        placeholder="修改分类"
-        emptyLabel="清除分类"
+        placeholder={t('batch.changeCategory')}
+        emptyLabel={t('batch.clearCategory')}
         showCount
         size="small"
         style={{ minWidth: 0 }}
       />
 
-      {/* 合集 */}
+      {/* {t('filter.collection')} */}
       <Menu>
         <MenuTrigger>
           <Button {...btnProps} icon={<BoxRegular />}>
-            合集
+            {t('filter.collection')}
           </Button>
         </MenuTrigger>
         <MenuPopover style={{ minWidth: '220px', maxHeight: '360px' }}>
@@ -174,39 +178,49 @@ export function BatchResourceOps({ selection }: BatchResourceOpsProps) {
             {collections?.map((c) => (
               <MenuItem
                 key={c.id}
-                onClick={() => doBatchUpdate({ add_collection_id: c.id }, `将 ${ids.length} 项加入「${c.title}」？`)}
+                onClick={() =>
+                  doBatchUpdate(
+                    { add_collection_id: c.id },
+                    t('batch.addCollectionConfirm', { n: ids.length, title: c.title }),
+                  )
+                }
               >
                 {c.title} ({c.resource_count ?? 0})
               </MenuItem>
             ))}
-            {(!collections || collections.length === 0) && <MenuItem disabled>暂无合集</MenuItem>}
+            {(!collections || collections.length === 0) && <MenuItem disabled>{t('batch.noCollections')}</MenuItem>}
           </MenuList>
         </MenuPopover>
       </Menu>
 
-      {/* 修改作者（含清除作者） */}
+      {/* 修改{t('filter.author')}（含清除{t('filter.author')}） */}
       <Menu>
         <MenuTrigger>
           <Button {...btnProps} icon={<PeopleRegular />}>
-            作者
+            {t('filter.author')}
           </Button>
         </MenuTrigger>
         <MenuPopover style={{ minWidth: '220px', maxHeight: '360px' }}>
           <MenuList>
-            <MenuItem onClick={() => doBatchUpdate({ user_id: null }, `清除 ${ids.length} 项的作者（变为无作者）？`)}>
-              清除作者（无作者）
+            <MenuItem
+              onClick={() => doBatchUpdate({ user_id: null }, t('batch.clearAuthorConfirm', { n: ids.length }))}
+            >
+              {t('batch.clearAuthor')}
             </MenuItem>
             {authors?.map((a) => (
               <MenuItem
                 key={a.id}
                 onClick={() =>
-                  doBatchUpdate({ user_id: a.id }, `将 ${ids.length} 项作者改为「${a.nickname || a.username}」？`)
+                  doBatchUpdate(
+                    { user_id: a.id },
+                    t('batch.setAuthorConfirm', { n: ids.length, name: a.nickname || a.username }),
+                  )
                 }
               >
-                {a.nickname || a.username} ({a.resource_count} 篇)
+                {a.nickname || a.username} ({a.resource_count} {t('list.unit.article')})
               </MenuItem>
             ))}
-            {(!authors || authors.length === 0) && <MenuItem disabled>暂无作者</MenuItem>}
+            {(!authors || authors.length === 0) && <MenuItem disabled>{t('batch.noAuthors')}</MenuItem>}
           </MenuList>
         </MenuPopover>
       </Menu>

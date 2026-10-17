@@ -25,21 +25,23 @@ import { formatBytes } from '../../lib/format';
 import type { OrphanFile } from '../../lib/tauri';
 import { useSelection, BatchBar } from '../../components/Selection';
 import { useStyles } from './styles';
+import { useLanguage } from '../../i18n';
 
-const CATEGORY_LABELS: Record<OrphanFile['category'], string> = {
-  thumbnail: '缩略图',
-  gallery: '图集图片',
-  content: '正文文件',
-  file: '普通附件',
-  torrent: '上传种子',
-  magnet: '磁力种子',
-  avatar: '头像',
-  logo: '站点 LOGO',
-  other: '其他',
+const CATEGORY_LABEL_KEYS: Record<OrphanFile['category'], string> = {
+  thumbnail: 'cleanup.cat.thumbnail',
+  gallery: 'cleanup.cat.gallery',
+  content: 'cleanup.cat.content',
+  file: 'cleanup.cat.file',
+  torrent: 'cleanup.cat.torrent',
+  magnet: 'cleanup.cat.magnet',
+  avatar: 'cleanup.cat.avatar',
+  logo: 'cleanup.cat.logo',
+  other: 'cleanup.cat.other',
 };
 
 export function CleanupTab() {
   const styles = useStyles();
+  const { t } = useLanguage();
   const selection = useSelection();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [cat, setCat] = useState<'all' | OrphanFile['category']>('all');
@@ -78,22 +80,24 @@ export function CleanupTab() {
         ok: res.failed.length === 0,
         text:
           res.failed.length === 0
-            ? `已删除 ${res.deleted.length} 个文件`
-            : `已删除 ${res.deleted.length} 个，${res.failed.length} 个失败（${res.failed
-                .slice(0, 3)
-                .map((f) => f.error)
-                .join('、')}）`,
+            ? t('cleanup.deleted', { n: res.deleted.length })
+            : t('cleanup.deletedPartial', {
+                deleted: res.deleted.length,
+                failed: res.failed.length,
+                errors: res.failed
+                  .slice(0, 3)
+                  .map((f) => f.error)
+                  .join('、'),
+              }),
       });
     },
-    onError: (e: Error) => setMsg({ ok: false, text: e.message || '删除失败' }),
+    onError: (e: Error) => setMsg({ ok: false, text: e.message || t('users.deleteFailed') }),
   });
 
   const batchDelete = async () => {
     const paths = filtered.filter((_, i) => selection.selected.has(i)).map((f) => f.path);
     if (paths.length === 0) return;
-    const ok = await confirmDanger(
-      `确认删除选中的 ${paths.length} 个文件？\n此操作不可恢复，若文章仍在引用这些文件，对应图片/附件将无法显示或打开。`,
-    );
+    const ok = await confirmDanger(t('cleanup.confirmDelete', { n: paths.length }));
     if (!ok) return;
     deleteMut.mutate(paths);
   };
@@ -105,13 +109,13 @@ export function CleanupTab() {
     <div className={styles.cleanupContainer}>
       <Card className={styles.card}>
         <div className={styles.title}>
-          <ScanObjectRegular /> 附件清理
+          <ScanObjectRegular /> {t('cleanup.title')}
         </div>
         <MessageBar intent="info" className={styles.feedback}>
           <MessageBarBody>
-            扫描存储目录中数据库已无任何引用的文件：永久删除文章后的残留（缩略图、图集、种子等），
-            以及上传到正文但后来不再引用的图片/附件。<b>回收站中的文章文件不会被列为垃圾</b>。
-            勾选后删除，未勾选即保留。
+            {t('cleanup.descPrefix')}
+            <b>{t('cleanup.descBold')}</b>
+            {t('cleanup.descSuffix')}
           </MessageBarBody>
         </MessageBar>
 
@@ -126,12 +130,12 @@ export function CleanupTab() {
             }}
             disabled={busy}
           >
-            {data ? '重新扫描' : '开始扫描'}
+            {data ? t('cleanup.rescan') : t('cleanup.scan')}
           </Button>
-          {isFetching && <Spinner size="tiny" label="扫描中（多线程遍历存储目录）..." />}
+          {isFetching && <Spinner size="tiny" label={t('cleanup.scanning')} />}
           {data && !isFetching && (
             <span style={{ fontSize: '13px', color: tokens.colorNeutralForeground3 }}>
-              发现 {files.length} 个未引用文件，共 {formatBytes(data.total_size)}
+              {t('cleanup.found', { n: files.length, size: formatBytes(data.total_size) })}
             </span>
           )}
         </div>
@@ -139,7 +143,7 @@ export function CleanupTab() {
         {msg && (
           <MessageBar intent={msg.ok ? 'success' : 'error'} style={{ marginTop: '12px' }}>
             <MessageBarBody>
-              <MessageBarTitle>{msg.ok ? '完成' : '失败'}</MessageBarTitle>
+              <MessageBarTitle>{msg.ok ? t('cleanup.done') : t('common.fail')}</MessageBarTitle>
               {msg.text}
             </MessageBarBody>
           </MessageBar>
@@ -149,7 +153,7 @@ export function CleanupTab() {
       {data && !isFetching && files.length === 0 && (
         <Card className={styles.card}>
           <MessageBar intent="success">
-            <MessageBarBody>未发现未引用文件，存储目录很干净。</MessageBarBody>
+            <MessageBarBody>{t('cleanup.clean')}</MessageBarBody>
           </MessageBar>
         </Card>
       )}
@@ -158,7 +162,7 @@ export function CleanupTab() {
         <Card className={styles.card}>
           <div className={styles.filterBar}>
             <Button size="small" appearance={cat === 'all' ? 'primary' : 'outline'} onClick={() => switchCat('all')}>
-              全部（{files.length}）
+              {t('cleanup.allCount', { n: files.length })}
             </Button>
             {Array.from(counts.entries())
               .sort((a, b) => b[1] - a[1])
@@ -169,7 +173,7 @@ export function CleanupTab() {
                   appearance={cat === c ? 'primary' : 'outline'}
                   onClick={() => switchCat(c as OrphanFile['category'])}
                 >
-                  {CATEGORY_LABELS[c as OrphanFile['category']]}（{n}）
+                  {t(CATEGORY_LABEL_KEYS[c as OrphanFile['category']])}（{n}）
                 </Button>
               ))}
           </div>
@@ -193,7 +197,7 @@ export function CleanupTab() {
                   <div className={styles.userName}>
                     {f.name}
                     <Badge size="small" appearance="outline">
-                      {CATEGORY_LABELS[f.category]}
+                      {t(CATEGORY_LABEL_KEYS[f.category])}
                     </Badge>
                     <span style={{ fontWeight: 400, fontSize: '12px' }}>{formatBytes(f.size)}</span>
                   </div>
@@ -205,7 +209,7 @@ export function CleanupTab() {
                   appearance="subtle"
                   size="small"
                   icon={<FolderOpenRegular />}
-                  title="在资源管理器中定位"
+                  title={t('cleanup.locate')}
                   onClick={() => torrentApi.revealFile(f.path).catch(() => undefined)}
                 />
               </div>
@@ -235,7 +239,7 @@ export function CleanupTab() {
           onClick={batchDelete}
           disabled={deleteMut.isPending}
         >
-          删除选中
+          {t('cleanup.deleteSelected')}
         </Button>
       </BatchBar>
     </div>

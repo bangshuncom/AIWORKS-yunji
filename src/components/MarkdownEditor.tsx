@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import Vditor from 'vditor';
 import 'vditor/dist/index.css';
 import { rewriteAssetDom, rewriteAssetHtml, collectorApi } from '../lib/tauri';
+import { tOutside } from '../i18n';
 
 export interface UploadedAsset {
   /** 存储相对路径，如 content/20260912_123.jpg */
@@ -26,13 +27,7 @@ const ICON_IMAGE =
 const ICON_ATTACH =
   '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>';
 
-export function MarkdownEditor({
-  value,
-  onChange,
-  height = 480,
-  placeholder = '在此输入 Markdown 内容...',
-  upload,
-}: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, height = 480, placeholder, upload }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const vditorRef = useRef<Vditor | null>(null);
   const readyRef = useRef(false);
@@ -81,9 +76,15 @@ export function MarkdownEditor({
         onChangeRef.current(next);
       }
       if (done > 0) {
-        vd.tip(`已本地化 ${done} 张图片${failed.length > 0 ? `，${failed.length} 张失败` : ''}`);
+        vd.tip(
+          tOutside('markdown.localized', { n: done }) +
+            (failed.length > 0 ? tOutside('markdown.localizedFailSuffix', { n: failed.length }) : ''),
+        );
       } else if (failed.length > 0) {
-        vd.tip(`图片本地化失败：${failed[0]}${failed.length > 1 ? ` 等 ${failed.length} 张` : ''}`);
+        vd.tip(
+          tOutside('markdown.localizeFailed', { error: failed[0] }) +
+            (failed.length > 1 ? tOutside('markdown.moreFailures', { n: failed.length }) : ''),
+        );
       }
     } finally {
       localizingRef.current = false;
@@ -130,7 +131,7 @@ export function MarkdownEditor({
         const snippet = kind === 'image' ? `\n![${asset.name}](${asset.path})\n` : `[${asset.name}](${asset.path})`;
         vditor.insertValue(snippet);
       } catch (e) {
-        vditor.tip(e instanceof Error ? e.message : '上传失败');
+        vditor.tip(e instanceof Error ? e.message : tOutside('markdown.uploadFailed'));
       } finally {
         busyRef.current = false;
       }
@@ -166,13 +167,13 @@ export function MarkdownEditor({
         '|',
         {
           name: 'upload-image',
-          tip: '上传图片',
+          tip: tOutside('general.uploadImage'),
           icon: ICON_IMAGE,
           click: () => void doUpload(vditor, 'image'),
         },
         {
           name: 'upload-file',
-          tip: '上传附件',
+          tip: tOutside('markdown.uploadFile'),
           icon: ICON_ATTACH,
           click: () => void doUpload(vditor, 'file'),
         },

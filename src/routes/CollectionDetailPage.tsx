@@ -11,6 +11,7 @@ import type { Collection, Resource } from '../types/models';
 import { usePerms } from '../hooks/usePerms';
 import { MarkdownView } from '../components/MarkdownView';
 import { formatTime, relativeTime } from '../lib/format';
+import { useLanguage } from '../i18n';
 
 const useStyles = makeStyles({
   container: { display: 'flex', flexDirection: 'column', gap: '24px' },
@@ -102,6 +103,7 @@ const useStyles = makeStyles({
 
 export function CollectionDetailPage() {
   const styles = useStyles();
+  const { t } = useLanguage();
   const { cid } = useParams<{ cid: string }>();
   const navigate = useNavigate();
   const canEdit = usePerms().can('collection_own');
@@ -141,14 +143,14 @@ export function CollectionDetailPage() {
     setPwdOpen(false);
   }, [cidNum]);
 
-  if (isLoading) return <Spinner label="加载中..." />;
+  if (isLoading) return <Spinner label={t('common.loading')} />;
   if (!collection) {
     // 私有 / 设了访问密码的合集：给出密码入口
     if (isForbidden(error)) {
       return (
         <div className={styles.container}>
           <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => navigate('/collections')}>
-            返回合集
+            {t('collectionDetail.back')}
           </Button>
           <div
             style={{
@@ -164,17 +166,17 @@ export function CollectionDetailPage() {
             }}
           >
             <LockClosedRegular style={{ fontSize: '32px', color: tokens.colorNeutralForeground3 }} />
-            <div style={{ fontSize: '16px', fontWeight: 600 }}>此合集受保护</div>
+            <div style={{ fontSize: '16px', fontWeight: 600 }}>{t('collectionDetail.protected')}</div>
             <div style={{ fontSize: '13px', color: tokens.colorNeutralForeground3 }}>
-              {pwdPassed ? '密码已通过，但你没有查看该私有合集的权限。' : '该合集为私有合集，或设有访问密码。'}
+              {pwdPassed ? t('collectionDetail.pwdPassedNoAccess') : t('collectionDetail.privateOrPwd')}
             </div>
             <Button appearance="primary" icon={<KeyRegular />} onClick={() => setPwdOpen(true)}>
-              输入访问密码
+              {t('detail.inputPassword')}
             </Button>
           </div>
           <PasswordDialog
             open={pwdOpen}
-            title="输入访问密码"
+            title={t('detail.inputPassword')}
             onSubmit={(pwd) => collectionApi.checkAccess(cidNum, pwd)}
             onUnlocked={() => {
               setPwdPassed(true);
@@ -187,7 +189,7 @@ export function CollectionDetailPage() {
     }
     return (
       <MessageBar intent="warning">
-        <MessageBarBody>{errorText(error) || '合集不存在或已被删除'}</MessageBarBody>
+        <MessageBarBody>{errorText(error) || t('collectionDetail.notFound')}</MessageBarBody>
       </MessageBar>
     );
   }
@@ -198,7 +200,7 @@ export function CollectionDetailPage() {
     <div className={styles.container}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => navigate('/collections')}>
-          返回合集
+          {t('collectionDetail.back')}
         </Button>
         {canEdit && (
           <Button
@@ -206,7 +208,7 @@ export function CollectionDetailPage() {
             icon={<EditRegular />}
             onClick={() => navigate(`/collection-edit/${collection.id}`)}
           >
-            编辑合集
+            {t('collectionDetail.edit')}
           </Button>
         )}
       </div>
@@ -224,16 +226,22 @@ export function CollectionDetailPage() {
         <div className={styles.headerMain}>
           <h1 className={styles.title}>{collection.title}</h1>
           <div className={styles.meta}>
-            <span title={formatTime(collection.created_at)}>创建于 {relativeTime(collection.created_at)}</span>
-            <span title={formatTime(collection.updated_at)}>更新于 {relativeTime(collection.updated_at)}</span>
-            <Badge appearance="outline">{collection.visibility === 'public' ? '公开' : '私有'}</Badge>
+            <span title={formatTime(collection.created_at)}>
+              {t('collectionDetail.createdAt')} {relativeTime(collection.created_at, t)}
+            </span>
+            <span title={formatTime(collection.updated_at)}>
+              {t('collectionDetail.updatedAt')} {relativeTime(collection.updated_at, t)}
+            </span>
+            <Badge appearance="outline">
+              {collection.visibility === 'public' ? t('collectionEdit.public') : t('collectionEdit.private')}
+            </Badge>
             {collection.has_password && (
               <Badge appearance="outline" icon={<KeyRegular />}>
-                需要访问密码
+                {t('collections.needPassword')}
               </Badge>
             )}
             <Badge appearance="filled" color="informative">
-              {collection.resource_count ?? resources.length} 篇文章
+              {collection.resource_count ?? resources.length} {t('collectionDetail.articles')}
             </Badge>
           </div>
           {collection.description && (
@@ -250,13 +258,13 @@ export function CollectionDetailPage() {
       <div>
         <h3 style={{ fontSize: '16px', fontWeight: 600, margin: '0 0 12px' }}>
           <DocumentRegular style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-          合集文章（{resources.length}）
+          {t('collectionDetail.articlesTitle')}（{resources.length}）
         </h3>
         {resources.length === 0 ? (
           <div
             style={{ color: tokens.colorNeutralForeground3, fontSize: '13px', padding: '20px', textAlign: 'center' }}
           >
-            暂无文章
+            {t('collectionDetail.noArticles')}
           </div>
         ) : (
           <div className={styles.resList}>

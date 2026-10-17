@@ -447,6 +447,34 @@ export function rewriteAssetDom(root: HTMLElement): void {
   });
 }
 
+// --- 多语言（i18n）---
+export interface LanguageInfo {
+  code: string;
+  name: string;
+  nativeName: string;
+  isSeed: boolean;
+  total: number;
+  missing: number;
+  coverage: number;
+  status: string;
+  error?: string | null;
+  warning?: string | null;
+  path: string;
+}
+
+export const i18nApi = {
+  /** 语言清单；force=true 时重新扫描 lang 目录（新增/改动了文件后） */
+  list: (force = false) => invoke<LanguageInfo[]>('list_languages', { force }),
+  /** 指定语言的完整字典（已按回退链合并，缺的条目用简体中文补齐） */
+  getDict: (code: string) => invoke<Record<string, string>>('get_language', { code }),
+  /** 语言目录绝对路径（设置页展示用） */
+  getLangDir: () => invoke<string>('get_lang_dir'),
+  /** 设置全局默认语言（仅管理员） */
+  setUiLanguage: (code: string) => invoke<void>('set_ui_language', { code }),
+  /** 在文件管理器中打开语言目录 */
+  openFolder: () => invoke<void>('open_lang_dir'),
+};
+
 // --- 附件清理（设置页，仅管理员） ---
 export interface OrphanFile {
   path: string;

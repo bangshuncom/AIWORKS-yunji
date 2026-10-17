@@ -4,6 +4,7 @@ import { Popover, PopoverSurface, PopoverTrigger, Button, makeStyles, tokens } f
 import { Tree, TreeItem, TreeItemLayout } from '@fluentui/react-tree';
 import { FolderRegular, DocumentRegular } from '@fluentui/react-icons';
 import type { Category } from '../types/models';
+import { useLanguage } from '../i18n';
 
 export interface CategoryTreeSelectProps {
   categories?: Category[];
@@ -84,9 +85,9 @@ export function CategoryTreeSelect({
   categories,
   value,
   onChange,
-  placeholder = '选择分类',
+  placeholder,
   allowEmpty = true,
-  emptyLabel = '（无分类）',
+  emptyLabel,
   showCount = false,
   excludeSubtreeOf = null,
   style,
@@ -94,6 +95,7 @@ export function CategoryTreeSelect({
   size = 'medium',
 }: CategoryTreeSelectProps) {
   const s = useStyles();
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const tree = filterTree(categories ?? [], excludeSubtreeOf);
   const label = value != null ? findName(tree, value) : undefined;
@@ -142,19 +144,19 @@ export function CategoryTreeSelect({
           disabled={disabled}
           icon={<FolderRegular fontSize={16} />}
         >
-          {label ?? placeholder}
+          {label ?? placeholder ?? t('categoryTree.placeholder')}
         </Button>
       </PopoverTrigger>
       <PopoverSurface className={s.surface}>
         {allowEmpty && (
           <Button className={s.clearBtn} appearance="subtle" size="small" onClick={() => handleSelect(null)}>
-            {emptyLabel}
+            {emptyLabel ?? t('categoryTree.emptyLabel')}
           </Button>
         )}
         {tree.length === 0 ? (
-          <div className={s.emptyText}>暂无分类</div>
+          <div className={s.emptyText}>{t('categoryTree.empty')}</div>
         ) : (
-          <Tree className={s.tree} aria-label="分类选择">
+          <Tree className={s.tree} aria-label={t('categoryTree.ariaLabel')}>
             {tree.map(renderNode)}
           </Tree>
         )}

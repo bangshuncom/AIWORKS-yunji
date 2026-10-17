@@ -12,9 +12,11 @@ import { CardContextMenu } from '../components/CardContextMenu';
 import { Pagination } from '../components/Pagination';
 import { useSharedStyles } from '../styles/shared';
 import { usePerms } from '../hooks/usePerms';
+import { useLanguage } from '../i18n';
 
 export function CollectionsPage() {
   const s = useSharedStyles();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const perms = usePerms();
@@ -45,7 +47,7 @@ export function CollectionsPage() {
   });
 
   const handleDelete = async (c: Collection) => {
-    if (await confirmDanger(`确认删除合集「${c.title}」？关联资源不会被删除。`)) {
+    if (await confirmDanger(t('collections.deleteConfirm', { title: c.title }))) {
       deleteMut.mutate(c.id);
     }
   };
@@ -53,7 +55,7 @@ export function CollectionsPage() {
   const batchDelete = () =>
     runBatchAction(
       selection,
-      (n) => `确认删除选中的 ${n} 个合集？关联资源不会被删除。`,
+      (n) => t('collections.batchDeleteConfirm', { n }),
       (id) => collectionApi.delete(id),
       () => queryClient.invalidateQueries({ queryKey: ['collections'] }),
     );
@@ -61,21 +63,21 @@ export function CollectionsPage() {
   return (
     <div className={s.pageContainer}>
       <div className={s.pageHeader}>
-        <h2 style={{ margin: 0 }}>合集管理</h2>
+        <h2 style={{ margin: 0 }}>{t('collections.title')}</h2>
       </div>
       {canCollection && (
         <div>
           <Button icon={<AddRegular />} appearance="primary" onClick={() => navigate('/collection-edit')}>
-            新建合集
+            {t('collections.new')}
           </Button>
         </div>
       )}
 
       {isLoading ? (
-        <Spinner label="加载中..." />
+        <Spinner label={t('common.loading')} />
       ) : !collections || collections.length === 0 ? (
         <div className={s.emptyState}>
-          <p>暂无合集，点击「新建合集」创建</p>
+          <p>{t('collections.empty')}</p>
         </div>
       ) : (
         <>
@@ -88,12 +90,12 @@ export function CollectionsPage() {
                     ? [
                         {
                           icon: <RenameRegular />,
-                          label: '编辑',
+                          label: t('common.edit'),
                           onClick: () => navigate(`/collection-edit/${c.id}`),
                         },
                         {
                           icon: <DeleteRegular />,
-                          label: '删除',
+                          label: t('common.delete'),
                           danger: true,
                           onClick: () => handleDelete(c),
                         },
@@ -157,11 +159,13 @@ export function CollectionsPage() {
                     {c.description && <span className={s.cardDesc}>{c.description}</span>}
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                       <Badge appearance="filled" color="informative">
-                        {c.resource_count ?? 0} 资源
+                        {c.resource_count ?? 0} {t('collections.resource')}
                       </Badge>
-                      <Badge appearance="outline">{c.visibility === 'public' ? '公开' : '私有'}</Badge>
+                      <Badge appearance="outline">
+                        {c.visibility === 'public' ? t('collections.public') : t('collections.private')}
+                      </Badge>
                       {c.has_password && (
-                        <span title="需要访问密码" style={{ fontSize: '14px', lineHeight: 1 }}>
+                        <span title={t('collections.needPassword')} style={{ fontSize: '14px', lineHeight: 1 }}>
                           🔒
                         </span>
                       )}
@@ -191,7 +195,7 @@ export function CollectionsPage() {
           onClear={selection.clear}
         >
           <Button appearance="primary" size="small" icon={<DeleteRegular />} onClick={batchDelete}>
-            批量删除
+            {t('collections.batchDelete')}
           </Button>
         </BatchBar>
       )}

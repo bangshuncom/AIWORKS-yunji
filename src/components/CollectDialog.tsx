@@ -28,6 +28,7 @@ import { confirmInfo } from '../lib/dialog';
 import type { CollectorInfo } from '../lib/tauri';
 import { extractPage, magnetName, magnetTrackerCount, parsePlugin, urlMatches } from '../lib/collector';
 import type { CollectResult } from '../lib/collector';
+import { useLanguage } from '../i18n';
 
 export interface CollectApplyPayload {
   title: string;
@@ -159,6 +160,7 @@ export function CollectDialog({
   onApply: (payload: CollectApplyPayload) => Promise<void>;
 }) {
   const s = useStyles();
+  const { t } = useLanguage();
   const [step, setStep] = useState<Step>('input');
   const [url, setUrl] = useState('');
   const [plugins, setPlugins] = useState<CollectorInfo[]>([]);
@@ -203,11 +205,11 @@ export function CollectDialog({
     setError('');
     const target = url.trim();
     if (!/^https?:\/\//i.test(target)) {
-      setError('请输入 http/https 开头的网页链接');
+      setError(t('collect.invalidUrl'));
       return;
     }
     if (!selectedPlugin) {
-      setError('请选择采集插件');
+      setError(t('collect.selectPlugin'));
       return;
     }
     setStep('loading');
@@ -224,13 +226,13 @@ export function CollectDialog({
       setUseThumb(!hasThumbnail);
       setUseSource(true);
       if (!result.title && !result.thumbnail && result.images.length === 0 && result.magnets.length === 0) {
-        setError('插件未从该页面提取到任何内容，可能页面结构已变化，请更换插件或检查链接');
+        setError(t('collect.noContent'));
         setStep('input');
         return;
       }
       setStep('preview');
     } catch (e) {
-      setError(e instanceof Error ? e.message : '采集失败');
+      setError(e instanceof Error ? e.message : t('collect.failed'));
       setStep('input');
     }
   };
@@ -239,22 +241,16 @@ export function CollectDialog({
     setError('');
     const picked = await open({
       multiple: false,
-      filters: [{ name: '采集插件', extensions: ['json'] }],
+      filters: [{ name: t('collect.pluginFile'), extensions: ['json'] }],
     });
     if (typeof picked !== 'string') return;
-    if (
-      !(await confirmInfo(
-        '导入第三方采集插件？插件只包含选择器规则、不执行代码，但仍建议只导入你信任的来源。',
-        '导入采集插件',
-      ))
-    )
-      return;
+    if (!(await confirmInfo(t('collect.importConfirm'), t('collect.importTitle')))) return;
     try {
       const info = await collectorApi.importPlugin(picked);
       setPlugins((prev) => [info, ...prev.filter((p) => p.id !== info.id)]);
       setSelectedId(info.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '导入失败');
+      setError(e instanceof Error ? e.message : t('collect.importFailed'));
     }
   };
 
@@ -280,7 +276,7 @@ export function CollectDialog({
       });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : '回填失败');
+      setError(e instanceof Error ? e.message : t('collect.applyFailed'));
     }
   };
 
@@ -289,7 +285,7 @@ export function CollectDialog({
       <div className={s.dialog}>
         <div className={s.header}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <GlobeRegular /> 网页采集
+            <GlobeRegular /> {t('edit.webCollect')}
           </span>
           {selectedPlugin && (
             <span style={{ fontWeight: 400, fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
@@ -308,7 +304,7 @@ export function CollectDialog({
           {(step === 'input' || step === 'loading') && (
             <>
               <Input
-                placeholder="粘贴单个网页链接，如 https://fitgirl-repacks.site/forza-horizon-6/"
+                placeholder={t('collect.urlPlaceholder')}
                 value={url}
                 onChange={(_, d) => setUrl(d.value)}
                 contentBefore={<GlobeRegular />}
@@ -321,16 +317,16 @@ export function CollectDialog({
                   onChange={(_, d) => setSelectedId(d.value)}
                   disabled={step === 'loading' || plugins.length === 0}
                 >
-                  {plugins.length === 0 && <option value="">（无可用插件）</option>}
+                  {plugins.length === 0 && <option value="">{t('collect.noPlugins')}</option>}
                   {plugins.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
-                      {urlMatches(p.patterns, url) ? '（匹配当前链接）' : ''}
+                      {urlMatches(p.patterns, url) ? t('collect.matchCurrent') : ''}
                     </option>
                   ))}
                 </Select>
                 <Button icon={<FolderAddRegular />} onClick={importPlugin} disabled={step === 'loading'}>
-                  导入插件
+                  {t('collect.importPlugin')}
                 </Button>
               </div>
               {selectedPlugin?.description && (
@@ -338,19 +334,19 @@ export function CollectDialog({
                   {selectedPlugin.description}
                 </span>
               )}
-              {step === 'loading' && <Spinner labelPosition="below" label="正在抓取并解析页面…" />}
+              {step === 'loading' && <Spinner labelPosition="below" label={t('collect.loading')} />}
             </>
           )}
 
           {step === 'preview' && extracted && (
             <>
               <div>
-                <div className={s.sectionLabel}>标题</div>
+                <div className={s.sectionLabel}>{t('collect.titleField')}</div>
                 <Input value={title} onChange={(_, d) => setTitle(d.value)} style={{ width: '100%' }} />
               </div>
 
               <div>
-                <div className={s.sectionLabel}>游戏简介</div>
+                <div className={s.sectionLabel}>{t('collect.gameIntro')}</div>
                 <Textarea
                   value={description}
                   onChange={(_, d) => setDescription(d.value)}
@@ -363,7 +359,11 @@ export function CollectDialog({
               {extracted.thumbnail && (
                 <div>
                   <div className={s.sectionLabel}>
-                    <Checkbox checked={useThumb} onChange={(_, d) => setUseThumb(d.checked === true)} label="封面图" />
+                    <Checkbox
+                      checked={useThumb}
+                      onChange={(_, d) => setUseThumb(d.checked === true)}
+                      label={t('edit.coverImage')}
+                    />
                   </div>
                   <div className={s.coverBox} style={{ marginTop: '6px' }}>
                     <RemoteImg className={s.coverImg} src={extracted.thumbnail} />
@@ -377,7 +377,7 @@ export function CollectDialog({
               {extracted.images.length > 0 && (
                 <div>
                   <div className={s.sectionLabel}>
-                    <ImageRegular /> 图集（{imgSet.size}/{extracted.images.length}，仅图片）
+                    <ImageRegular /> {t('collect.gallery', { n: imgSet.size, total: extracted.images.length })}
                     <Button
                       size="small"
                       appearance="subtle"
@@ -389,7 +389,7 @@ export function CollectDialog({
                         )
                       }
                     >
-                      {imgSet.size === extracted.images.length ? '全不选' : '全选'}
+                      {imgSet.size === extracted.images.length ? t('collect.selectNone') : t('collect.selectAll')}
                     </Button>
                   </div>
                   <div className={s.imgGrid}>
@@ -411,7 +411,7 @@ export function CollectDialog({
               {extracted.magnets.length > 0 && (
                 <div>
                   <div className={s.sectionLabel}>
-                    🧲 磁力链接（{magSet.size}/{extracted.magnets.length}，已按 hash 去重）
+                    🧲 {t('collect.magnets', { n: magSet.size, total: extracted.magnets.length })}
                     <Button
                       size="small"
                       appearance="subtle"
@@ -423,7 +423,7 @@ export function CollectDialog({
                         )
                       }
                     >
-                      {magSet.size === extracted.magnets.length ? '全不选' : '全选'}
+                      {magSet.size === extracted.magnets.length ? t('collect.selectNone') : t('collect.selectAll')}
                     </Button>
                   </div>
                   {extracted.magnets.map((m, i) => {
@@ -435,12 +435,14 @@ export function CollectDialog({
                           onChange={(_, d) => toggle(magSet, setMagSet, i, d.checked === true)}
                         />
                         <div style={{ fontSize: '12px', minWidth: 0 }}>
-                          <div style={{ fontWeight: 600 }}>{dn || `磁力 #${i + 1}`}</div>
+                          <div style={{ fontWeight: 600 }}>{dn || t('collect.magnetN', { n: i + 1 })}</div>
                           <div style={{ color: tokens.colorNeutralForeground3, wordBreak: 'break-all' }}>
                             {m.slice(0, 100)}
                             {m.length > 100 ? '…' : ''}
                           </div>
-                          <div>{magnetTrackerCount(m)} 个 tracker</div>
+                          <div>
+                            {magnetTrackerCount(m)} {t('collect.tracker')}
+                          </div>
                         </div>
                       </div>
                     );
@@ -453,12 +455,14 @@ export function CollectDialog({
                 <Checkbox
                   checked={useSource}
                   onChange={(_, d) => setUseSource(d.checked === true)}
-                  label="把采集网址作为「链接」类型附件"
+                  label={t('collect.asLink')}
                 />
               </div>
 
               <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-                封面与图集只登记远程地址，会在<b>保存文章时</b>才下载到本地并显示进度。
+                {t('collect.hintPrefix')}
+                <b>{t('collect.hintBold')}</b>
+                {t('collect.hintSuffix')}
               </span>
             </>
           )}
@@ -466,12 +470,12 @@ export function CollectDialog({
 
         <div className={s.footer}>
           <Button appearance="subtle" onClick={onClose} disabled={step === 'loading'}>
-            取消
+            {t('common.cancel')}
           </Button>
           {step === 'preview' && (
             <>
               <Button icon={<ArrowLeftRegular />} onClick={() => setStep('input')}>
-                上一步
+                {t('collect.prev')}
               </Button>
               <Button
                 appearance="primary"
@@ -479,13 +483,13 @@ export function CollectDialog({
                 onClick={confirm}
                 disabled={!title.trim() && !useThumb && imgSet.size === 0 && magSet.size === 0 && !useSource}
               >
-                确认回填
+                {t('collect.confirm')}
               </Button>
             </>
           )}
           {step === 'input' && (
             <Button appearance="primary" icon={<ArrowDownloadRegular />} onClick={start}>
-              开始采集
+              {t('collect.start')}
             </Button>
           )}
         </div>
@@ -497,6 +501,7 @@ export function CollectDialog({
 /** 远程图片预览：加载失败时显示兜底（部分站防盗链，实际下载由后端带 Referer 完成） */
 function RemoteImg({ src, className }: { src: string; className: string }) {
   const [failed, setFailed] = useState(false);
+  const { t } = useLanguage();
   if (failed) {
     return (
       <div
@@ -511,7 +516,7 @@ function RemoteImg({ src, className }: { src: string; className: string }) {
           textAlign: 'center',
         }}
       >
-        预览不可用
+        {t('collect.previewUnavailable')}
       </div>
     );
   }

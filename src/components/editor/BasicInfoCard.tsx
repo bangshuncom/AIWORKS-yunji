@@ -8,6 +8,7 @@ import { PillPicker, type PillOption } from './PillPicker';
 import type { Tag } from '../../types/models';
 import { useStyles, CARD_STYLE, normalizeTagInput } from './shared';
 import { useComposingInput } from '../../hooks/useComposingInput';
+import { useLanguage } from '../../i18n';
 
 export interface BasicInfoValues {
   title: string;
@@ -29,17 +30,18 @@ export function BasicInfoCard({
   uploadContentAsset: (kind: 'image' | 'file') => Promise<UploadedAsset | null>;
 }) {
   const styles = useStyles();
+  const { t } = useLanguage();
   // 输入法组词保护：见 useComposingInput 的说明，组词期间不改写输入内容
   const composing = useComposingInput();
 
   const tagOptions = useMemo<PillOption[]>(
-    () => (tags ?? []).map((t) => ({ id: t.id, label: t.name, count: t.count })),
+    () => (tags ?? []).map((tag) => ({ id: tag.id, label: tag.name, count: tag.count })),
     [tags],
   );
 
   // 输入框里填的、且当前不存在的标签名——只统计真正会新建的，已存在的会被复用
   const newTagList = useMemo(() => {
-    const known = new Set((tags ?? []).map((t) => t.name));
+    const known = new Set((tags ?? []).map((tag) => tag.name));
     return values.newTagNames
       .split(',')
       .map((s) => s.trim())
@@ -49,7 +51,7 @@ export function BasicInfoCard({
   return (
     <Card style={CARD_STYLE}>
       <div className={styles.field}>
-        <Label htmlFor="title">标题 *</Label>
+        <Label htmlFor="title">{t('basicInfo.title')}</Label>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
           <Input
             id="title"
@@ -61,7 +63,7 @@ export function BasicInfoCard({
         </div>
       </div>
       <div className={styles.field}>
-        <Label htmlFor="desc">描述</Label>
+        <Label htmlFor="desc">{t('itemsCard.description')}</Label>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
           <Textarea
             id="desc"
@@ -75,30 +77,30 @@ export function BasicInfoCard({
       </div>
       <div className={styles.field}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-          <Label>正文（Markdown）</Label>
+          <Label>{t('basicInfo.content')}</Label>
           <TranslateButton value={values.content} onChange={(v) => onChange({ content: v })} />
         </div>
         <MarkdownEditor
           value={values.content}
           onChange={(v) => onChange({ content: v })}
           height={480}
-          placeholder="在此输入 Markdown 正文..."
+          placeholder={t('basicInfo.contentPlaceholder')}
           upload={uploadContentAsset}
         />
       </div>
       {/* 标签：常用标签直接点选，搜索框实时过滤；新建仍走单行输入 */}
       <div className={styles.field}>
-        <Label>标签</Label>
+        <Label>{t('basicInfo.tags')}</Label>
         <PillPicker
           options={tagOptions}
           selectedIds={values.tagIds}
           onChange={(ids) => onChange({ tagIds: ids })}
-          searchPlaceholder="搜索已有标签：输入即过滤，点击结果即可选中"
-          emptyHint="还没有标签，可在下方输入框新建"
-          noMatchHint="没有匹配的标签，可在下方输入框新建"
+          searchPlaceholder={t('basicInfo.searchTag')}
+          emptyHint={t('basicInfo.noTags')}
+          noMatchHint={t('basicInfo.noMatchTags')}
         />
         <Input
-          placeholder="新增标签，中英文逗号均可分隔（保存时自动创建）"
+          placeholder={t('basicInfo.newTagPlaceholder')}
           value={values.newTagNames}
           onChange={(_, d) => onChange({ newTagNames: composing.transform(d.value, normalizeTagInput) })}
           onCompositionStart={composing.onCompositionStart}
@@ -109,7 +111,7 @@ export function BasicInfoCard({
         />
         {newTagList.length > 0 && (
           <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-            保存后将新建 {newTagList.length} 个标签：{newTagList.join('、')}
+            {t('basicInfo.willCreate', { n: newTagList.length, names: newTagList.join('、') })}
           </span>
         )}
       </div>

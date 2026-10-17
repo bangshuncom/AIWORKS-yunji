@@ -249,12 +249,12 @@ export interface CreateCollection {
 
 // --- 附件类型元数据 ---
 
-export const ITEM_TYPE_META: Record<string, { label: string; icon: string }> = {
-  link: { label: '链接', icon: '🔗' },
-  direct_link: { label: '直链', icon: '⬇️' },
-  magnet_torrent: { label: '磁力种子', icon: '🧲' },
-  ed2k: { label: 'eD2K', icon: '🔌' },
-  file: { label: '附件', icon: '📁' },
+export const ITEM_TYPE_META: Record<string, { labelKey: string; icon: string }> = {
+  link: { labelKey: 'itemType.link', icon: '🔗' },
+  direct_link: { labelKey: 'itemType.direct_link', icon: '⬇️' },
+  magnet_torrent: { labelKey: 'itemType.magnet_torrent', icon: '🧲' },
+  ed2k: { labelKey: 'itemType.ed2k', icon: '🔌' },
+  file: { labelKey: 'itemType.file', icon: '📁' },
 };
 
 // --- 分类（树形多级子分类） ---

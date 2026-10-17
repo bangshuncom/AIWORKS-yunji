@@ -26,18 +26,20 @@ import {
 import { PersonRegular, AddRegular, DeleteRegular, EditRegular, SearchRegular } from '@fluentui/react-icons';
 import { userApi, assetUrl } from '../../lib/tauri';
 import { confirmDanger } from '../../lib/dialog';
-import { LEVEL_OPTIONS, levelText } from '../../lib/levels';
+import { LEVEL_OPTIONS, levelTextKey } from '../../lib/levels';
 import { useAuthStore } from '../../stores/authStore';
 import { useSelection, BatchBar } from '../../components/Selection';
 import { UserEditDialog } from '../../components/UserEditDialog';
 import { Pagination } from '../../components/Pagination';
 import type { AdminUser } from '../../types/models';
 import { useStyles } from './styles';
+import { useLanguage } from '../../i18n';
 
 const PAGE_SIZE = 36;
 
 export function UsersTab() {
   const styles = useStyles();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const selection = useSelection();
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -79,11 +81,11 @@ export function UsersTab() {
     mutationFn: (ids: number[]) => userApi.deleteMany(ids),
     onSuccess: (res) => {
       invalidate();
-      const parts = [`已删除 ${res.deleted} 个用户`];
-      if (res.skipped > 0) parts.push(`自动跳过 ${res.skipped} 个（自己/权限不足）`);
+      const parts = [t('users.deleted', { n: res.deleted })];
+      if (res.skipped > 0) parts.push(t('users.skipped', { n: res.skipped }));
       setMsg({ ok: true, text: parts.join('，') });
     },
-    onError: (e: Error) => setMsg({ ok: false, text: e.message || '删除失败' }),
+    onError: (e: Error) => setMsg({ ok: false, text: e.message || t('users.deleteFailed') }),
   });
 
   const userIds = users.map((u) => u.id);
@@ -92,12 +94,7 @@ export function UsersTab() {
     const ids = Array.from(selection.selected);
     if (ids.length === 0) return;
     // 第一层确认（任何情况下先弹，不依赖任何异步请求）
-    if (
-      !(await confirmDanger(
-        `确认删除选中的 ${ids.length} 个用户？此操作不可恢复！（自己和权限不足的账户会被自动跳过）`,
-      ))
-    )
-      return;
+    if (!(await confirmDanger(t('users.confirmDelete', { n: ids.length })))) return;
     try {
       // 拉全量用户判断目标权限（分页数据可能不含选中项）
       const all = await userApi.list();
@@ -109,17 +106,12 @@ export function UsersTab() {
       if (isInitialAdmin) {
         const highTargets = targets.filter((u) => u.is_admin || u.permission_level >= 5);
         if (highTargets.length > 0) {
-          if (
-            !(await confirmDanger(
-              `选中的用户中包含 ${highTargets.length} 个权限 5 的账户，确认一并删除？此操作不可恢复！`,
-            ))
-          )
-            return;
+          if (!(await confirmDanger(t('users.confirmDeleteHigh', { n: highTargets.length })))) return;
         }
       }
       deleteMut.mutate(ids, { onSettled: () => selection.clear() });
     } catch (e: any) {
-      setMsg({ ok: false, text: e?.message || '删除失败' });
+      setMsg({ ok: false, text: e?.message || t('users.deleteFailed') });
     }
   };
 
@@ -135,9 +127,9 @@ export function UsersTab() {
       invalidate();
       setCreateOpen(false);
       setCreateForm({ username: '', nickname: '', email: '', password: '', permission_level: 0 });
-      setMsg({ ok: true, text: '用户已创建' });
+      setMsg({ ok: true, text: t('users.created') });
     },
-    onError: (e: Error) => setMsg({ ok: false, text: e.message || '创建失败' }),
+    onError: (e: Error) => setMsg({ ok: false, text: e.message || t('users.createFailed') }),
   });
 
   // 批量新建：多行文本，每行 "用户名,密码" 或 "用户名,密码,昵称"
@@ -153,9 +145,9 @@ export function UsersTab() {
       invalidate();
       setBatchCreateOpen(false);
       setBatchText('');
-      setMsg({ ok: true, text: '批量创建完成' });
+      setMsg({ ok: true, text: t('users.batchDone') });
     },
-    onError: (e: Error) => setMsg({ ok: false, text: e.message || '批量创建失败' }),
+    onError: (e: Error) => setMsg({ ok: false, text: e.message || t('users.batchFailed') }),
   });
 
   const handleBatchCreate = () => {
@@ -170,7 +162,7 @@ export function UsersTab() {
       })
       .filter((l) => l.username && l.password);
     if (lines.length === 0) {
-      setMsg({ ok: false, text: '每行格式：用户名,密码[,昵称]' });
+      setMsg({ ok: false, text: t('users.lineFormat') });
       return;
     }
     batchCreateMut.mutate(lines);
@@ -188,7 +180,7 @@ export function UsersTab() {
         }}
       >
         <div className={styles.title}>
-          <PersonRegular /> 用户管理
+          <PersonRegular /> {t('settings.tab.users')}
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <Button
@@ -200,14 +192,14 @@ export function UsersTab() {
               setCreateOpen(true);
             }}
           >
-            新建用户
+            {t('users.new')}
           </Button>
           <Button appearance="outline" size="small" icon={<AddRegular />} onClick={() => setBatchCreateOpen(true)}>
-            批量新建
+            {t('users.batchNew')}
           </Button>
           <Input
             style={{ width: '200px' }}
-            placeholder="搜索用户名 / 昵称 / 邮箱"
+            placeholder={t('users.searchPlaceholder')}
             value={keyword}
             onChange={(_, d) => {
               setKeyword(d.value);
@@ -221,17 +213,17 @@ export function UsersTab() {
       {msg && (
         <MessageBar intent={msg.ok ? 'success' : 'error'} className={styles.feedback}>
           <MessageBarBody>
-            <MessageBarTitle>{msg.ok ? '成功' : '失败'}</MessageBarTitle>
+            <MessageBarTitle>{msg.ok ? t('common.success') : t('common.fail')}</MessageBarTitle>
             {msg.text}
           </MessageBarBody>
         </MessageBar>
       )}
 
       {isLoading ? (
-        <div style={{ color: tokens.colorNeutralForeground3, fontSize: '13px' }}>加载中...</div>
+        <div style={{ color: tokens.colorNeutralForeground3, fontSize: '13px' }}>{t('common.loading')}</div>
       ) : users.length === 0 ? (
         <div style={{ color: tokens.colorNeutralForeground3, fontSize: '13px', padding: '12px 0' }}>
-          {keyword ? '没有匹配的用户' : '暂无用户'}
+          {keyword ? t('users.noMatch') : t('users.empty')}
         </div>
       ) : (
         <div>
@@ -253,22 +245,22 @@ export function UsersTab() {
                   <span style={{ fontWeight: 400, color: tokens.colorNeutralForeground3 }}>(@{u.username})</span>
                   {u.is_admin && (
                     <Badge size="small" color="brand">
-                      管理员
+                      {t('users.admin')}
                     </Badge>
                   )}
                   {!u.is_admin && (
                     <Badge size="small" appearance="outline">
-                      权限 {u.permission_level}
+                      {t('users.level', { n: u.permission_level })}
                     </Badge>
                   )}
-                  {u.id === currentUserId && <Badge size="small">当前用户</Badge>}
+                  {u.id === currentUserId && <Badge size="small">{t('users.current')}</Badge>}
                 </div>
                 <div className={styles.userMeta}>
-                  {u.email || '未设置邮箱'} · 注册于 {u.created_at.slice(0, 10)}
+                  {u.email || t('users.noEmail')} · {t('users.registeredAt', { date: u.created_at.slice(0, 10) })}
                 </div>
               </div>
               <Button appearance="outline" size="small" icon={<EditRegular />} onClick={() => openEdit(u)}>
-                编辑
+                {t('common.edit')}
               </Button>
             </div>
           ))}
@@ -293,7 +285,7 @@ export function UsersTab() {
           onClick={batchDelete}
           disabled={deleteMut.isPending}
         >
-          批量删除
+          {t('users.batchDelete')}
         </Button>
       </BatchBar>
 
@@ -301,18 +293,18 @@ export function UsersTab() {
       <UserEditDialog
         target={editTarget}
         onClose={() => setEditTarget(null)}
-        onChanged={() => setMsg({ ok: true, text: '用户信息已保存' })}
+        onChanged={() => setMsg({ ok: true, text: t('users.saved') })}
       />
 
       {/* 新建用户对话框 */}
       <Dialog open={createOpen} onOpenChange={(_, d) => setCreateOpen(d.open)}>
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>新建用户</DialogTitle>
+            <DialogTitle>{t('users.new')}</DialogTitle>
             <DialogContent>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <Label htmlFor="cu_username">用户名</Label>
+                  <Label htmlFor="cu_username">{t('users.username')}</Label>
                   <Input
                     id="cu_username"
                     value={createForm.username}
@@ -320,16 +312,16 @@ export function UsersTab() {
                   />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <Label htmlFor="cu_nickname">昵称</Label>
+                  <Label htmlFor="cu_nickname">{t('users.nickname')}</Label>
                   <Input
                     id="cu_nickname"
                     value={createForm.nickname}
                     onChange={(_, d) => setCreateForm((f) => ({ ...f, nickname: d.value }))}
-                    placeholder="留空则使用用户名"
+                    placeholder={t('users.nicknamePlaceholder')}
                   />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <Label htmlFor="cu_email">邮箱（可选）</Label>
+                  <Label htmlFor="cu_email">{t('users.email')}</Label>
                   <Input
                     id="cu_email"
                     value={createForm.email}
@@ -337,28 +329,28 @@ export function UsersTab() {
                   />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <Label htmlFor="cu_pwd">密码</Label>
+                  <Label htmlFor="cu_pwd">{t('users.password')}</Label>
                   <Input
                     id="cu_pwd"
                     type="password"
                     value={createForm.password}
                     onChange={(_, d) => setCreateForm((f) => ({ ...f, password: d.value }))}
-                    placeholder="至少 6 位"
+                    placeholder={t('users.pwdPlaceholder')}
                   />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <Label htmlFor="cu_level">权限值</Label>
+                  <Label htmlFor="cu_level">{t('users.levelLabel')}</Label>
                   <Dropdown
                     id="cu_level"
-                    value={levelText(createForm.permission_level)}
+                    value={t(levelTextKey(createForm.permission_level), { n: createForm.permission_level })}
                     selectedOptions={[String(createForm.permission_level)]}
                     onOptionSelect={(_, d) =>
                       d.optionValue && setCreateForm((f) => ({ ...f, permission_level: Number(d.optionValue) }))
                     }
                   >
                     {LEVEL_OPTIONS.map((n) => (
-                      <Option key={n} value={String(n)} text={levelText(n)}>
-                        {levelText(n)}
+                      <Option key={n} value={String(n)} text={t(levelTextKey(n), { n })}>
+                        {t(levelTextKey(n), { n })}
                       </Option>
                     ))}
                   </Dropdown>
@@ -367,7 +359,7 @@ export function UsersTab() {
             </DialogContent>
             <DialogActions>
               <Button appearance="secondary" onClick={() => setCreateOpen(false)}>
-                取消
+                {t('common.cancel')}
               </Button>
               <Button
                 appearance="primary"
@@ -387,7 +379,7 @@ export function UsersTab() {
                   })
                 }
               >
-                创建
+                {t('users.create')}
               </Button>
             </DialogActions>
           </DialogBody>
@@ -398,30 +390,38 @@ export function UsersTab() {
       <Dialog open={batchCreateOpen} onOpenChange={(_, d) => setBatchCreateOpen(d.open)}>
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>批量新建用户</DialogTitle>
+            <DialogTitle>{t('users.batchNewTitle')}</DialogTitle>
             <DialogContent>
               <p style={{ marginTop: 0, fontSize: '13px', color: tokens.colorNeutralForeground2 }}>
-                每行一个用户，格式：<code>用户名,密码</code> 或 <code>用户名,密码,昵称</code>。昵称留空则使用用户名。
+                {t('users.batchDescPrefix')}
+                <code>
+                  {t('users.username')},{t('users.password')}
+                </code>
+                {t('users.batchDescMid')}
+                <code>
+                  {t('users.username')},{t('users.password')},{t('users.nickname')}
+                </code>
+                {t('users.batchDescSuffix')}
               </p>
               <Textarea
                 style={{ width: '100%', fontFamily: 'monospace' }}
                 rows={8}
                 resize="vertical"
-                placeholder={'user1,123456\nuser2,abc789,小明\nuser3,xyz321'}
+                placeholder={t('users.batchPlaceholder')}
                 value={batchText}
                 onChange={(_, d) => setBatchText(d.value)}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px' }}>
-                <Label>统一权限值</Label>
+                <Label>{t('users.batchLevel')}</Label>
                 <Dropdown
                   style={{ minWidth: '200px' }}
-                  value={levelText(batchPerm)}
+                  value={t(levelTextKey(batchPerm), { n: batchPerm })}
                   selectedOptions={[String(batchPerm)]}
                   onOptionSelect={(_, d) => d.optionValue && setBatchPerm(Number(d.optionValue))}
                 >
                   {LEVEL_OPTIONS.map((n) => (
-                    <Option key={n} value={String(n)} text={levelText(n)}>
-                      {levelText(n)}
+                    <Option key={n} value={String(n)} text={t(levelTextKey(n), { n })}>
+                      {t(levelTextKey(n), { n })}
                     </Option>
                   ))}
                 </Dropdown>
@@ -429,14 +429,14 @@ export function UsersTab() {
             </DialogContent>
             <DialogActions>
               <Button appearance="secondary" onClick={() => setBatchCreateOpen(false)}>
-                取消
+                {t('common.cancel')}
               </Button>
               <Button
                 appearance="primary"
                 disabled={batchCreateMut.isPending || !batchText.trim()}
                 onClick={handleBatchCreate}
               >
-                {batchCreateMut.isPending ? '创建中...' : '批量创建'}
+                {batchCreateMut.isPending ? t('users.creating') : t('users.batchCreate')}
               </Button>
             </DialogActions>
           </DialogBody>

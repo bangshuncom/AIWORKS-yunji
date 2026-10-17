@@ -168,9 +168,9 @@ export const normalizeTagInput = (s: string) => s.replace(/，/g, ',');
 export const genId = () => Math.random().toString(36).slice(2, 11);
 
 export const ITEM_TYPES = [
-  { value: 'link', label: '🔗 链接' },
-  { value: 'ed2k', label: '🔌 eD2K' },
-  { value: 'magnet_torrent', label: '🧲 磁力种子' },
-  { value: 'file', label: '📁 附件文件' },
-  { value: 'direct_link', label: '🔗 文件直链' },
+  { value: 'link', labelKey: 'itemsCard.type.link' },
+  { value: 'ed2k', labelKey: 'itemsCard.type.ed2k' },
+  { value: 'magnet_torrent', labelKey: 'itemsCard.type.magnet_torrent' },
+  { value: 'file', labelKey: 'itemsCard.type.file' },
+  { value: 'direct_link', labelKey: 'itemsCard.type.direct_link' },
 ];

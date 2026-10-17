@@ -14,9 +14,11 @@ import {
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { settingsApi, assetUrl } from '../../lib/tauri';
 import { useStyles } from './styles';
+import { useLanguage } from '../../i18n';
 
 export function GeneralTab() {
   const styles = useStyles();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const [form, setForm] = useState<Record<string, string>>({});
   const [logoBusy, setLogoBusy] = useState(false);
@@ -54,7 +56,7 @@ export function GeneralTab() {
     setLogoError('');
     const selected = await openDialog({
       multiple: false,
-      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'ico'] }],
+      filters: [{ name: t('edit.filterImage'), extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'ico'] }],
     });
     if (typeof selected !== 'string') return;
     setLogoBusy(true);
@@ -67,7 +69,7 @@ export function GeneralTab() {
       await settingsApi.update({ logo_mode: logoMode });
       refreshSettings();
     } catch (e: any) {
-      setLogoError(e.message || 'LOGO 上传失败');
+      setLogoError(e.message || t('general.logoUploadFailed'));
     } finally {
       setLogoBusy(false);
     }
@@ -83,7 +85,7 @@ export function GeneralTab() {
       await settingsApi.update({ logo_mode: logoMode });
       refreshSettings();
     } catch (e: any) {
-      setLogoError(e.message || 'LOGO 清除失败');
+      setLogoError(e.message || t('general.logoClearFailed'));
     } finally {
       setLogoBusy(false);
     }
@@ -93,23 +95,23 @@ export function GeneralTab() {
     <div className={styles.container}>
       <Card className={styles.card}>
         <div className={styles.title}>
-          <SettingsRegular /> 站点信息
+          <SettingsRegular /> {t('general.siteInfo')}
         </div>
         <div className={styles.field}>
-          <Label htmlFor="site_name">站点名称</Label>
+          <Label htmlFor="site_name">{t('general.siteName')}</Label>
           <Input id="site_name" value={form.site_name ?? ''} onChange={(_, d) => set('site_name', d.value)} />
         </div>
         <div className={styles.field}>
-          <Label id="logo_mode_label">LOGO 样式</Label>
+          <Label id="logo_mode_label">{t('general.logoStyle')}</Label>
           <RadioGroup aria-labelledby="logo_mode_label" value={logoMode} onChange={(_, d) => set('logo_mode', d.value)}>
-            <Radio value="text" label="文字 LOGO（仅显示站点名称）" />
-            <Radio value="icon_text" label="图标 + 文字" />
-            <Radio value="image" label="图片 LOGO" />
+            <Radio value="text" label={t('general.logoText')} />
+            <Radio value="icon_text" label={t('general.logoIconText')} />
+            <Radio value="image" label={t('general.logoImage')} />
           </RadioGroup>
         </div>
         {(logoMode === 'image' || logoMode === 'icon_text') && (
           <div className={styles.field}>
-            <Label>{logoMode === 'image' ? 'LOGO 图片' : '图标图片'}</Label>
+            <Label>{logoMode === 'image' ? t('general.logoImageLabel') : t('general.iconImageLabel')}</Label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <div
                 style={
@@ -143,20 +145,24 @@ export function GeneralTab() {
                   logoPath ? (
                     <img
                       src={assetUrl(logoPath)}
-                      alt="LOGO"
+                      alt={t('general.logo')}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
                   ) : (
-                    <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>未设置</span>
+                    <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
+                      {t('general.notSet')}
+                    </span>
                   )
                 ) : iconPath ? (
                   <img
                     src={assetUrl(iconPath)}
-                    alt="图标"
+                    alt={t('general.icon')}
                     style={{ maxWidth: '90%', maxHeight: '90%', objectFit: 'contain' }}
                   />
                 ) : (
-                  <span style={{ fontSize: '11px', color: tokens.colorNeutralForeground3 }}>默认图标</span>
+                  <span style={{ fontSize: '11px', color: tokens.colorNeutralForeground3 }}>
+                    {t('general.defaultIcon')}
+                  </span>
                 )}
               </div>
               <Button
@@ -165,7 +171,13 @@ export function GeneralTab() {
                 onClick={() => pickLogo(logoMode === 'image' ? 'image' : 'icon')}
                 disabled={logoBusy}
               >
-                {logoMode === 'image' ? (logoPath ? '更换图片' : '上传图片') : iconPath ? '更换图标' : '上传图标'}
+                {logoMode === 'image'
+                  ? logoPath
+                    ? t('general.changeImage')
+                    : t('general.uploadImage')
+                  : iconPath
+                    ? t('general.changeIcon')
+                    : t('general.uploadIcon')}
               </Button>
               {((logoMode === 'image' && logoPath) || (logoMode === 'icon_text' && iconPath)) && (
                 <Button
@@ -174,15 +186,13 @@ export function GeneralTab() {
                   onClick={() => removeLogo(logoMode === 'image' ? 'image' : 'icon')}
                   disabled={logoBusy}
                 >
-                  移除
+                  {t('general.remove')}
                 </Button>
               )}
               {logoBusy && <Spinner size="tiny" />}
             </div>
             <div style={{ fontSize: '12px', color: tokens.colorNeutralForeground3, marginTop: '4px' }}>
-              {logoMode === 'image'
-                ? '图片将铺满左上角 LOGO 区域（建议宽幅图片）'
-                : '建议使用正方形图片，显示为站点名称前的图标；不上传则使用默认图标'}
+              {logoMode === 'image' ? t('general.logoImageHint') : t('general.logoIconHint')}
             </div>
             {logoError && (
               <div style={{ color: tokens.colorPaletteRedForeground1, fontSize: '12px', marginTop: '4px' }}>
@@ -201,17 +211,17 @@ export function GeneralTab() {
           }
           disabled={updateMut.isPending}
         >
-          保存
+          {t('common.save')}
         </Button>
       </Card>
 
       <Card className={styles.card}>
         <div className={styles.title}>
-          <DesktopRegular /> 窗口行为
+          <DesktopRegular /> {t('general.windowBehavior')}
         </div>
         <div className={styles.field}>
           <Switch
-            label="关闭按钮最小化到托盘（点击窗口 × 时隐藏到系统托盘，通过托盘菜单退出程序）"
+            label={t('general.closeToTray')}
             checked={form.close_to_tray === '1'}
             onChange={(_, d) => updateMut.mutate({ close_to_tray: d.checked ? '1' : '0' })}
           />
@@ -220,29 +230,29 @@ export function GeneralTab() {
 
       <Card className={styles.card}>
         <div className={styles.title}>
-          <GlobeRegular /> 链接打开方式
+          <GlobeRegular /> {t('general.linkOpenMode')}
         </div>
         <div className={styles.field}>
-          <Label id="link_mode_label">正文中的外部链接点击时</Label>
+          <Label id="link_mode_label">{t('general.linkLabel')}</Label>
           <RadioGroup
             aria-labelledby="link_mode_label"
             value={form.link_open_mode ?? 'default'}
             onChange={(_, d) => set('link_open_mode', d.value)}
           >
-            <Radio value="default" label="系统默认浏览器" />
-            <Radio value="custom" label="指定浏览器" />
+            <Radio value="default" label={t('general.defaultBrowser')} />
+            <Radio value="custom" label={t('general.customBrowser')} />
           </RadioGroup>
         </div>
         {(form.link_open_mode ?? 'default') === 'custom' && (
           <div className={styles.field}>
-            <Label htmlFor="browser_path">浏览器路径（可执行文件）</Label>
+            <Label htmlFor="browser_path">{t('general.browserPath')}</Label>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <Input
                 id="browser_path"
                 style={{ flex: 1 }}
                 value={form.browser_path ?? ''}
                 onChange={(_, d) => set('browser_path', d.value)}
-                placeholder="如 C:\Program Files\Google\Chrome\Application\chrome.exe"
+                placeholder={t('general.chromePathExample')}
               />
               <Button
                 appearance="outline"
@@ -250,16 +260,16 @@ export function GeneralTab() {
                 onClick={async () => {
                   const selected = await openDialog({
                     multiple: false,
-                    filters: [{ name: '可执行文件', extensions: ['exe'] }],
+                    filters: [{ name: t('general.executable'), extensions: ['exe'] }],
                   });
                   if (typeof selected === 'string') set('browser_path', selected);
                 }}
               >
-                浏览
+                {t('general.browse')}
               </Button>
             </div>
             <div style={{ fontSize: '12px', color: tokens.colorNeutralForeground3, marginTop: '4px' }}>
-              指定浏览器时，点击正文外链将用该浏览器打开；留空则回退系统默认浏览器
+              {t('general.browserHint')}
             </div>
           </div>
         )}
@@ -273,16 +283,16 @@ export function GeneralTab() {
           }
           disabled={updateMut.isPending}
         >
-          保存
+          {t('common.save')}
         </Button>
       </Card>
 
       <Card className={styles.card}>
         <div className={styles.title}>
-          <CloudRegular /> 存储后端
+          <CloudRegular /> {t('general.storageBackend')}
         </div>
         <div className={styles.field}>
-          <Label htmlFor="local_upload_dir">本地存储目录（相对或绝对路径）</Label>
+          <Label htmlFor="local_upload_dir">{t('general.localDir')}</Label>
           <Input
             id="local_upload_dir"
             value={form.local_upload_dir ?? ''}
@@ -290,7 +300,7 @@ export function GeneralTab() {
           />
         </div>
         <div className={styles.field}>
-          <Label htmlFor="local_url_prefix">URL 前缀（用于本地资源访问）</Label>
+          <Label htmlFor="local_url_prefix">{t('general.urlPrefix')}</Label>
           <Input
             id="local_url_prefix"
             value={form.local_url_prefix ?? ''}
@@ -307,7 +317,7 @@ export function GeneralTab() {
           }
           disabled={updateMut.isPending}
         >
-          保存存储设置
+          {t('general.saveStorage')}
         </Button>
       </Card>
     </div>

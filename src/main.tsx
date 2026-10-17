@@ -9,6 +9,7 @@ import { router } from './App';
 import { useUIStore } from './stores/uiStore';
 import { useAuthStore } from './stores/authStore';
 import { initAssetBaseDir, settingsApi } from './lib/tauri';
+import { LanguageProvider } from './i18n';
 import './styles/global.css';
 
 const queryClient = new QueryClient({
@@ -57,11 +58,13 @@ function AppContent() {
   }, [init]);
 
   return (
-    <FluentProvider theme={theme === 'dark' ? yunjiDarkTheme : yunjiLightTheme}>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
-    </FluentProvider>
+    <LanguageProvider>
+      <FluentProvider theme={theme === 'dark' ? yunjiDarkTheme : yunjiLightTheme}>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </FluentProvider>
+    </LanguageProvider>
   );
 }
 

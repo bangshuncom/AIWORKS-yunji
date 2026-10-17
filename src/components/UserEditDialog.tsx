@@ -22,14 +22,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { userApi, authApi, assetUrl } from '../lib/tauri';
 import { useAuthStore } from '../stores/authStore';
 import { AvatarCropDialog } from './AvatarCropDialog';
-import { LEVEL_OPTIONS, levelText } from '../lib/levels';
+import { LEVEL_OPTIONS, levelTextKey } from '../lib/levels';
 import type { AdminUser } from '../types/models';
+import { useLanguage } from '../i18n';
 
 export interface UserEditDialogProps {
   /** 编辑目标（null 关闭） */
   target: AdminUser | null;
   onClose: () => void;
-  /** 保存/头像更新成功后的额外回调（如刷新列表） */
+  /** {t('common.save')}/头像更新成功后的额外回调（如刷新列表） */
   onChanged?: () => void;
 }
 
@@ -44,6 +45,7 @@ interface EditForm {
 
 export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogProps) {
   const queryClient = useQueryClient();
+  const { t } = useLanguage();
   const currentUserId = useAuthStore((s) => s.user?.id);
   const refreshMe = useAuthStore((s) => s.setUser);
   const [form, setForm] = useState<EditForm | null>(null);
@@ -93,7 +95,7 @@ export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogPro
     if (!target) return;
     const selected = await openDialog({
       multiple: false,
-      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }],
+      filters: [{ name: t('edit.filterImage'), extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }],
     });
     if (typeof selected === 'string') setCropFile(selected);
   };
@@ -123,10 +125,10 @@ export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogPro
       >
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>编辑用户（{target.nickname || target.username}）</DialogTitle>
+            <DialogTitle>{t('userEdit.title', { name: target.nickname || target.username })}</DialogTitle>
             <DialogContent>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
-                <Label>头像</Label>
+                <Label>{t('userEdit.avatar')}</Label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <Avatar
                     size={56}
@@ -134,12 +136,12 @@ export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogPro
                     image={avatar ? { src: assetUrl(avatar) } : undefined}
                   />
                   <Button appearance="outline" size="small" icon={<ImageRegular />} onClick={pickAvatar}>
-                    更换头像
+                    {t('profile.changeAvatar')}
                   </Button>
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
-                <Label htmlFor="eu_username">用户名</Label>
+                <Label htmlFor="eu_username">{t('auth.username')}</Label>
                 <Input
                   id="eu_username"
                   value={form.username}
@@ -147,7 +149,7 @@ export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogPro
                 />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
-                <Label htmlFor="eu_nickname">昵称</Label>
+                <Label htmlFor="eu_nickname">{t('profile.nickname')}</Label>
                 <Input
                   id="eu_nickname"
                   value={form.nickname}
@@ -155,7 +157,7 @@ export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogPro
                 />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
-                <Label htmlFor="eu_email">邮箱</Label>
+                <Label htmlFor="eu_email">{t('profile.email')}</Label>
                 <Input
                   id="eu_email"
                   value={form.email}
@@ -163,7 +165,7 @@ export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogPro
                 />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
-                <Label htmlFor="eu_bio">简介</Label>
+                <Label htmlFor="eu_bio">{t('profile.bio')}</Label>
                 <Textarea
                   id="eu_bio"
                   value={form.bio}
@@ -171,10 +173,14 @@ export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogPro
                 />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
-                <Label htmlFor="eu_level">权限值</Label>
+                <Label htmlFor="eu_level">{t('userEdit.permissionLevel')}</Label>
                 <Dropdown
                   id="eu_level"
-                  value={target.is_admin ? '5 - 仅管理员（管理员固定 5）' : levelText(form.permission_level)}
+                  value={
+                    target.is_admin
+                      ? t('userEdit.adminFixed')
+                      : t(levelTextKey(form.permission_level), { n: form.permission_level })
+                  }
                   selectedOptions={[String(form.permission_level)]}
                   disabled={target.is_admin}
                   onOptionSelect={(_, d) =>
@@ -182,18 +188,18 @@ export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogPro
                   }
                 >
                   {LEVEL_OPTIONS.map((n) => (
-                    <Option key={n} value={String(n)} text={levelText(n)}>
-                      {levelText(n)}
+                    <Option key={n} value={String(n)} text={t(levelTextKey(n), { n })}>
+                      {t(levelTextKey(n), { n })}
                     </Option>
                   ))}
                 </Dropdown>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <Label htmlFor="eu_pwd">新密码（留空则不修改）</Label>
+                <Label htmlFor="eu_pwd">{t('userEdit.newPwd')}</Label>
                 <Input
                   id="eu_pwd"
                   type="password"
-                  placeholder="至少 6 位"
+                  placeholder={t('register.passwordPlaceholder')}
                   value={form.new_password}
                   onChange={(_, d) => setForm((f) => (f ? { ...f, new_password: d.value } : f))}
                 />
@@ -201,7 +207,7 @@ export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogPro
             </DialogContent>
             <DialogActions>
               <Button appearance="secondary" onClick={onClose}>
-                取消
+                {t('common.cancel')}
               </Button>
               <Button
                 appearance="primary"
@@ -213,7 +219,7 @@ export function UserEditDialog({ target, onClose, onChanged }: UserEditDialogPro
                 }
                 onClick={save}
               >
-                保存
+                {t('common.save')}
               </Button>
             </DialogActions>
           </DialogBody>

@@ -6,6 +6,7 @@ import { ViewSwitcher } from '../ViewSwitcher';
 import { SearchDialog } from '../SearchDialog';
 import { makeStyles, tokens, Button, Tooltip } from '@fluentui/react-components';
 import { SearchRegular } from '@fluentui/react-icons';
+import { useLanguage } from '../../i18n';
 
 const useStyles = makeStyles({
   shell: {
@@ -34,6 +35,7 @@ const useStyles = makeStyles({
 export function AppShell() {
   const styles = useStyles();
   const [searchOpen, setSearchOpen] = useState(false);
+  const { t } = useLanguage();
 
   return (
     <div className={styles.shell}>
@@ -42,7 +44,7 @@ export function AppShell() {
         <Outlet />
       </main>
       <ViewSwitcher />
-      <Tooltip content="搜索" relationship="label">
+      <Tooltip content={t('common.search')} relationship="label">
         <Button
           className={styles.searchBtn}
           appearance="subtle"

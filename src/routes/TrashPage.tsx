@@ -8,12 +8,14 @@ import { confirmDanger } from '../lib/dialog';
 import { invalidateArticleData } from '../lib/invalidate';
 import { useSelection, runBatchAction } from '../components/Selection';
 import { ResourceList } from '../components/resources/ResourceList';
+import { useLanguage } from '../i18n';
 import type { Resource } from '../types/models';
 
 export function TrashPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const selection = useSelection();
+  const { t } = useLanguage();
 
   const restoreMut = useMutation({
     mutationFn: (rid: number) => resourceApi.restore(rid),
@@ -33,8 +35,7 @@ export function TrashPage() {
   });
 
   const handlePermanentDelete = async (r: Resource) => {
-    if (await confirmDanger(`彻底删除「${r.title}」？此操作不可恢复，关联的所有文件将被清除。`))
-      permanentDeleteMut.mutate(r.id);
+    if (await confirmDanger(t('trash.confirmDelete', { title: r.title }))) permanentDeleteMut.mutate(r.id);
   };
 
   const busy = restoreMut.isPending || permanentDeleteMut.isPending;
@@ -47,26 +48,26 @@ export function TrashPage() {
       menuItems={(r) => [
         {
           icon: <ArrowCounterclockwiseRegular />,
-          label: '恢复',
+          label: t('trash.restore'),
           onClick: () => restoreMut.mutate(r.id),
         },
         {
           icon: <DeleteRegular />,
-          label: '彻底删除',
+          label: t('trash.permanentDelete'),
           danger: true,
           onClick: () => handlePermanentDelete(r),
         },
       ]}
       showDescription={false}
-      emptyText="回收站为空"
+      emptyText={t('trash.empty')}
       toolbar={
         <>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-            <h2 style={{ margin: 0 }}>回收站</h2>
+            <h2 style={{ margin: 0 }}>{t('trash.title')}</h2>
           </div>
           <div>
             <Button appearance="outline" onClick={() => navigate('/')}>
-              返回首页
+              {t('trash.backHome')}
             </Button>
           </div>
         </>
@@ -80,7 +81,7 @@ export function TrashPage() {
             onClick={() =>
               runBatchAction(
                 selection,
-                (n) => `将选中的 ${n} 项恢复？`,
+                (n) => t('trash.confirmRestore', { n }),
                 (id) => restoreMut.mutateAsync(id),
                 () => {
                   queryClient.invalidateQueries({ queryKey: ['trash'] });
@@ -90,7 +91,7 @@ export function TrashPage() {
             }
             disabled={busy}
           >
-            批量恢复
+            {t('trash.batchRestore')}
           </Button>
           <Button
             appearance="primary"
@@ -99,7 +100,7 @@ export function TrashPage() {
             onClick={() =>
               runBatchAction(
                 selection,
-                (n) => `将选中的 ${n} 项彻底删除？此操作不可恢复。`,
+                (n) => t('trash.confirmBatchDelete', { n }),
                 (id) => permanentDeleteMut.mutateAsync(id),
                 () => {
                   queryClient.invalidateQueries({ queryKey: ['trash'] });
@@ -109,7 +110,7 @@ export function TrashPage() {
             }
             disabled={busy}
           >
-            批量彻底删除
+            {t('trash.batchDelete')}
           </Button>
         </>
       }

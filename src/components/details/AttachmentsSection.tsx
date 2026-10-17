@@ -12,6 +12,7 @@ import {
 import type { ReactElement } from 'react';
 import type { ResourceItem } from '../../types/models';
 import { useStyles, type MtGroup } from './shared';
+import { useLanguage } from '../../i18n';
 
 const ITEM_ICONS: Record<string, ReactElement> = {
   link: <LinkRegular />,
@@ -20,11 +21,11 @@ const ITEM_ICONS: Record<string, ReactElement> = {
   file: <DocumentRegular />,
 };
 
-const ITEM_LABELS: Record<string, string> = {
-  link: '链接',
-  direct_link: '直链',
-  ed2k: 'ED2K',
-  file: '附件',
+const ITEM_LABEL_KEYS: Record<string, string> = {
+  link: 'itemType.link',
+  direct_link: 'itemType.direct_link',
+  ed2k: 'itemType.ed2k',
+  file: 'itemType.file',
 };
 
 export function AttachmentsSection({
@@ -42,13 +43,14 @@ export function AttachmentsSection({
 }) {
   const styles = useStyles();
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   return (
     <>
       {items.map((it) => (
         <div key={it.id} className={styles.itemBlock}>
           <div className={styles.itemHeader}>
-            {ITEM_ICONS[it.type] ?? <LinkRegular />} {ITEM_LABELS[it.type] ?? it.type}
+            {ITEM_ICONS[it.type] ?? <LinkRegular />} {t(ITEM_LABEL_KEYS[it.type] ?? it.type)}
           </div>
           {it.description && <div className={styles.itemDesc}>{it.description}</div>}
           {it.type === 'file' ? (
@@ -56,7 +58,7 @@ export function AttachmentsSection({
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <WarningRegular color={tokens.colorPaletteRedForeground1} />
                 <span style={{ fontSize: '12px', color: tokens.colorPaletteRedForeground1 }}>
-                  附件「{it.file_name || '文件'}」已丢失（可能被手动删除），无法下载
+                  {t('attachments.missing', { name: it.file_name || t('attachments.file') })}
                 </span>
                 {canArticle && (
                   <Button
@@ -65,7 +67,7 @@ export function AttachmentsSection({
                     icon={<EditRegular />}
                     onClick={() => navigate(`/edit/${resourceId}`)}
                   >
-                    编辑文章重新上传
+                    {t('attachments.reupload')}
                   </Button>
                 )}
               </div>
@@ -80,13 +82,13 @@ export function AttachmentsSection({
                       magnetContent: '',
                       magnetFileName: '',
                       torrentPath: it.file_path,
-                      torrentFileName: it.file_name || '附件',
+                      torrentFileName: it.file_name || t('attachments.attachment'),
                       description: '',
                       itemId: it.id,
                     })
                   }
                 >
-                  下载 {it.file_name || '附件'}
+                  {t('attachments.download', { name: it.file_name || t('attachments.attachment') })}
                 </Button>
               </div>
             )
@@ -94,7 +96,7 @@ export function AttachmentsSection({
             <div
               className={styles.magnetContent}
               onClick={() => navigator.clipboard?.writeText(it.content).catch(() => {})}
-              title="点击复制"
+              title={t('attachments.copyHint')}
             >
               <span style={{ flex: 1 }}>{it.content}</span>
               <CopyRegular />

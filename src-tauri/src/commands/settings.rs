@@ -16,6 +16,7 @@ const PUBLIC_KEYS: &[&str] = &[
     "logo_icon_path",
     "list_page_size",
     "list_infinite_scroll",
+    "ui_language",
 ];
 
 #[tauri::command]
@@ -34,6 +35,8 @@ pub async fn get_public_settings(state: State<'_, AppState>) -> CmdResult<HashMa
         // 与前端 ResourceList 的兜底值保持一致
         ("list_page_size", "24"),
         ("list_infinite_scroll", "1"),
+        // 全局默认界面语言（本地 localStorage 可覆盖），缺省简体中文
+        ("ui_language", "zh-CN"),
     ];
     for key in PUBLIC_KEYS {
         let default = defaults.iter().find(|(k, _)| k == key).map(|(_, d)| *d).unwrap_or("");

@@ -19,6 +19,7 @@ import { useSelection, runBatchAction } from '../components/Selection';
 import { BatchResourceOps } from '../components/BatchResourceOps';
 import { ResourceList } from '../components/resources/ResourceList';
 import type { ContextMenuItem } from '../components/CardContextMenu';
+import { useLanguage } from '../i18n';
 
 export function ListPage() {
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ export function ListPage() {
   const canArticle = usePerms().can('article_own');
   const queryClient = useQueryClient();
   const selection = useSelection();
+  const { t } = useLanguage();
 
   const page = parseInt(searchParams.get('page') ?? '1', 10) || 1;
   const search = searchParams.get('q') ?? '';
@@ -63,17 +65,20 @@ export function ListPage() {
     queryFn: authorApi.list,
     enabled: authorId !== undefined,
   });
-  const activeTagName = tagId !== undefined ? (tags?.find((t) => t.id === tagId)?.name ?? `标签 #${tagId}`) : undefined;
+  const activeTagName =
+    tagId !== undefined
+      ? (tags?.find((tt) => tt.id === tagId)?.name ?? t('list.unknownTag', { id: tagId }))
+      : undefined;
   const activeCollectionTitle =
     collectionId !== undefined
-      ? (collections?.find((c) => c.id === collectionId)?.title ?? `合集 #${collectionId}`)
+      ? (collections?.find((c) => c.id === collectionId)?.title ?? t('list.unknownCollection', { id: collectionId }))
       : undefined;
   const activeAuthor = authorId !== undefined ? authors?.find((a) => a.id === authorId) : undefined;
   const activeAuthorName =
     authorId !== undefined
       ? activeAuthor
         ? activeAuthor.nickname || activeAuthor.username
-        : `作者 #${authorId}`
+        : t('list.unknownAuthor', { id: authorId })
       : undefined;
 
   const deleteMut = useMutation({
@@ -103,15 +108,15 @@ export function ListPage() {
       ? [
           {
             icon: <EditRegular />,
-            label: '编辑',
+            label: t('list.edit'),
             onClick: () => navigate(`/edit/${r.id}`),
           },
           {
             icon: <DeleteRegular />,
-            label: '删除',
+            label: t('list.delete'),
             danger: true,
             onClick: async () => {
-              if (await confirmDanger(`将「${r.title}」移入回收站？`)) deleteMut.mutate(r.id);
+              if (await confirmDanger(t('list.moveToTrash', { title: r.title }))) deleteMut.mutate(r.id);
             },
           },
         ]
@@ -120,7 +125,7 @@ export function ListPage() {
   const batchDelete = () =>
     runBatchAction(
       selection,
-      (n) => `将选中的 ${n} 项移入回收站？`,
+      (n) => t('list.batchMoveToTrash', { count: n }),
       (id) => deleteMut.mutateAsync(id),
       () => invalidateArticleData(queryClient),
     );
@@ -138,8 +143,8 @@ export function ListPage() {
       page={page}
       onPageChange={setPageNum}
       resetKey={JSON.stringify(filterParams)}
-      emptyText="暂无资源"
-      allLoadedUnit="篇"
+      emptyText={t('list.empty')}
+      allLoadedUnit={t('list.unit.article')}
       toolbar={
         <div
           style={{
@@ -153,7 +158,7 @@ export function ListPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', minHeight: '32px' }}>
             {activeCollectionTitle && (
               <FilterChip
-                kind="合集"
+                kind={t('filter.collection')}
                 name={activeCollectionTitle}
                 icon={<FolderRegular />}
                 loading={collectionId !== undefined && !collections}
@@ -162,7 +167,7 @@ export function ListPage() {
             )}
             {activeTagName && (
               <FilterChip
-                kind="标签"
+                kind={t('filter.tag')}
                 name={activeTagName}
                 icon={<TagRegular />}
                 loading={tagId !== undefined && !tags}
@@ -171,7 +176,7 @@ export function ListPage() {
             )}
             {activeAuthorName && (
               <FilterChip
-                kind="作者"
+                kind={t('filter.author')}
                 name={activeAuthorName}
                 icon={<PeopleRegular />}
                 loading={authorId !== undefined && !authors}
@@ -191,7 +196,7 @@ export function ListPage() {
             onClick={batchDelete}
             disabled={deleteMut.isPending}
           >
-            批量删除
+            {t('list.batchDelete')}
           </Button>
         </>
       }
@@ -214,6 +219,7 @@ function FilterChip({
   loading?: boolean;
   onClear: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <div
       style={{
@@ -240,11 +246,11 @@ function FilterChip({
           whiteSpace: 'nowrap',
         }}
       >
-        {loading ? '加载中…' : name}
+        {loading ? t('common.loading') : name}
       </strong>
       <button
         type="button"
-        title={`清除${kind}筛选`}
+        title={t('list.clearFilter', { kind })}
         onClick={onClear}
         style={{
           display: 'inline-flex',

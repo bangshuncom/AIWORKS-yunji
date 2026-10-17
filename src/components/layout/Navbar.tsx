@@ -36,6 +36,7 @@ import {
 import { useAuthStore } from '../../stores/authStore';
 import { usePerms } from '../../hooks/usePerms';
 import { settingsApi, categoryApi, assetUrl } from '../../lib/tauri';
+import { useLanguage } from '../../i18n';
 import type { Category } from '../../types/models';
 
 const useStyles = makeStyles({
@@ -191,13 +192,14 @@ export function Navbar() {
   const canTrash = can('trash');
   const canUser = can('user');
   const canSettings = isAdmin || canUser;
+  const { t } = useLanguage();
   // 公开设置：站点名称 / LOGO 模式（与 usePerms 共享缓存，设置保存后自动刷新）
   const { data: pubSettings } = useQuery({
     queryKey: ['public-settings'],
     queryFn: settingsApi.getPublic,
     staleTime: 30_000,
   });
-  const siteName = pubSettings?.site_name || '云记';
+  const siteName = pubSettings?.site_name || t('app.name');
   const logoMode = pubSettings?.logo_mode || 'text';
   const logoImage = pubSettings?.logo_image_path || '';
   const logoIcon = pubSettings?.logo_icon_path || '';
@@ -273,7 +275,12 @@ export function Navbar() {
       <div className={styles.nav}>
         {/* 上半部分：一级分类 */}
         <div className={styles.navTop}>
-          <NavItem icon={<HomeRegular />} label="全部" path="/" active={currentPath === '/' && !isCategoryView} />
+          <NavItem
+            icon={<HomeRegular />}
+            label={t('nav.all')}
+            path="/"
+            active={currentPath === '/' && !isCategoryView}
+          />
           {categories.map((cat) => (
             <CategoryNavItem key={cat.id} cat={cat} level={0} />
           ))}
@@ -281,10 +288,10 @@ export function Navbar() {
 
         {/* 下半部分：合集/标签/回收站 */}
         <div className={styles.navBottom}>
-          <NavItem icon={<FolderRegular />} label="合集" path="/collections" />
-          <NavItem icon={<TagRegular />} label="标签" path="/tags" />
-          <NavItem icon={<PeopleRegular />} label="作者" path="/authors" />
-          {canTrash && <NavItem icon={<DeleteRegular />} label="回收站" path="/trash" />}
+          <NavItem icon={<FolderRegular />} label={t('nav.collections')} path="/collections" />
+          <NavItem icon={<TagRegular />} label={t('nav.tags')} path="/tags" />
+          <NavItem icon={<PeopleRegular />} label={t('nav.authors')} path="/authors" />
+          {canTrash && <NavItem icon={<DeleteRegular />} label={t('nav.trash')} path="/trash" />}
         </div>
       </div>
 
@@ -311,20 +318,20 @@ export function Navbar() {
               <MenuList>
                 {canArticle && (
                   <MenuItem icon={<AddRegular />} onClick={() => navigate('/edit')}>
-                    新建文章
+                    {t('nav.newArticle')}
                   </MenuItem>
                 )}
                 {canArticle && (
                   <MenuItem icon={<AppsRegular />} onClick={() => navigate('/categories')}>
-                    分类管理
+                    {t('nav.categories')}
                   </MenuItem>
                 )}
                 <MenuItem icon={<PersonRegular />} onClick={() => navigate('/profile')}>
-                  个人资料
+                  {t('nav.profile')}
                 </MenuItem>
                 {canSettings && (
                   <MenuItem icon={<SettingsRegular />} onClick={() => navigate('/admin')}>
-                    系统设置
+                    {t('nav.settings')}
                   </MenuItem>
                 )}
                 <MenuItem
@@ -334,7 +341,7 @@ export function Navbar() {
                     navigate('/');
                   }}
                 >
-                  退出登录
+                  {t('nav.logout')}
                 </MenuItem>
               </MenuList>
             </MenuPopover>
@@ -346,7 +353,7 @@ export function Navbar() {
             onClick={() => navigate('/login')}
             style={{ width: '100%' }}
           >
-            登录
+            {t('nav.login')}
           </Button>
         )}
       </div>

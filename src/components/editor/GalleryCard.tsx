@@ -5,6 +5,7 @@ import { DndContext, closestCenter, type DragEndEvent, type SensorDescriptor, ty
 import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableImage } from './Sortable';
 import { useStyles, CARD_STYLE, CARD_HEAD_STYLE, type EditImage } from './shared';
+import { useLanguage } from '../../i18n';
 
 export function GalleryCard({
   images,
@@ -20,17 +21,20 @@ export function GalleryCard({
   onDragEnd: (e: DragEndEvent) => void;
 }) {
   const styles = useStyles();
+  const { t } = useLanguage();
 
   return (
     <Card style={CARD_STYLE}>
       <div style={CARD_HEAD_STYLE}>
-        <Label>图集</Label>
+        <Label>{t('gallery.title')}</Label>
         <Button size="small" appearance="outline" icon={<AddCircleRegular />} onClick={onUpload}>
-          添加图片
+          {t('gallery.addImage')}
         </Button>
       </div>
       {images.length === 0 ? (
-        <div style={{ padding: '16px', textAlign: 'center', color: tokens.colorNeutralForeground3 }}>暂无图片</div>
+        <div style={{ padding: '16px', textAlign: 'center', color: tokens.colorNeutralForeground3 }}>
+          {t('gallery.empty')}
+        </div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={images.map((im) => String(im.id))} strategy={horizontalListSortingStrategy}>

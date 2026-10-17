@@ -2,6 +2,7 @@ pub mod auth;
 pub mod categories;
 pub mod cleanup;
 pub mod collections;
+pub mod i18n;
 pub mod images;
 pub mod resources;
 pub mod settings;

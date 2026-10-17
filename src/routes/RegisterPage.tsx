@@ -6,9 +6,11 @@ import { AuthShell } from '../components/common/AuthShell';
 import { FormField } from '../components/common/FormField';
 import { useAuthStore } from '../stores/authStore';
 import { authApi } from '../lib/tauri';
+import { useLanguage } from '../i18n';
 
 export function RegisterPage() {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const { setUser } = useAuthStore();
   const [username, setUsername] = useState('');
   const [nickname, setNickname] = useState('');
@@ -22,7 +24,7 @@ export function RegisterPage() {
     e.preventDefault();
     setError('');
     if (password !== confirmPassword) {
-      setError('两次输入的密码不一致');
+      setError(t('profile.pwdMismatch'));
       return;
     }
     setLoading(true);
@@ -31,7 +33,7 @@ export function RegisterPage() {
       setUser(user);
       navigate('/');
     } catch (err: any) {
-      setError(err.message || '注册失败');
+      setError(err.message || t('register.failed'));
     } finally {
       setLoading(false);
     }
@@ -39,36 +41,50 @@ export function RegisterPage() {
 
   return (
     <AuthShell
-      title="注册"
+      title={t('auth.register')}
       footer={
         <>
-          已有账户？<Link to="/login">去登录</Link>
+          {t('register.haveAccount')}
+          <Link to="/login">{t('register.goLogin')}</Link>
         </>
       }
     >
       <form onSubmit={handleSubmit}>
         <FormField
           id="username"
-          label="用户名"
+          label={t('auth.username')}
           value={username}
           onChange={(_, d) => setUsername(d.value)}
-          placeholder="2-32 个字符"
+          placeholder={t('register.usernamePlaceholder')}
           required
         />
-        <FormField id="nickname" label="昵称" value={nickname} onChange={(_, d) => setNickname(d.value)} required />
-        <FormField id="email" label="邮箱" type="email" value={email} onChange={(_, d) => setEmail(d.value)} required />
+        <FormField
+          id="nickname"
+          label={t('profile.nickname')}
+          value={nickname}
+          onChange={(_, d) => setNickname(d.value)}
+          required
+        />
+        <FormField
+          id="email"
+          label={t('profile.email')}
+          type="email"
+          value={email}
+          onChange={(_, d) => setEmail(d.value)}
+          required
+        />
         <FormField
           id="password"
-          label="密码"
+          label={t('auth.password')}
           type="password"
           value={password}
           onChange={(_, d) => setPassword(d.value)}
-          placeholder="至少 6 位"
+          placeholder={t('register.passwordPlaceholder')}
           required
         />
         <FormField
           id="confirm"
-          label="确认密码"
+          label={t('register.confirmPassword')}
           type="password"
           value={confirmPassword}
           onChange={(_, d) => setConfirmPassword(d.value)}
@@ -76,7 +92,7 @@ export function RegisterPage() {
         />
         {error && <div style={{ color: 'red', marginBottom: '8px' }}>{error}</div>}
         <Button type="submit" appearance="primary" disabled={loading} style={{ width: '100%' }}>
-          {loading ? '注册中...' : '注册'}
+          {loading ? t('register.registering') : t('auth.register')}
         </Button>
       </form>
     </AuthShell>

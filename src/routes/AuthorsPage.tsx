@@ -23,6 +23,7 @@ import { Pagination } from '../components/Pagination';
 import { useSharedStyles } from '../styles/shared';
 import { useAuthStore } from '../stores/authStore';
 import type { AuthorInfo, AdminUser } from '../types/models';
+import { useLanguage } from '../i18n';
 
 const PAGE_SIZE = 36;
 
@@ -59,6 +60,7 @@ const useStyles = makeStyles({
 export function AuthorsPage() {
   const s = useSharedStyles();
   const styles = useStyles();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canUser = usePerms().can('user');
@@ -87,12 +89,12 @@ export function AuthorsPage() {
     onSuccess: (res) => {
       invalidate();
       if (res.deleted === 0) {
-        setMsg({ ok: false, text: '该用户不可删除（自己或管理员）' });
+        setMsg({ ok: false, text: t('authors.cannotDeleteSelfOrAdmin') });
       } else {
-        setMsg({ ok: true, text: '作者已删除' });
+        setMsg({ ok: true, text: t('authors.deleted') });
       }
     },
-    onError: (e: Error) => setMsg({ ok: false, text: e.message || '删除失败' }),
+    onError: (e: Error) => setMsg({ ok: false, text: e.message || t('authors.deleteFailed') }),
   });
 
   // 编辑前拉取完整用户信息（AuthorInfo 缺 email/permission_level 等字段）
@@ -102,19 +104,19 @@ export function AuthorsPage() {
       const list = await userApi.list();
       const full = list.find((u) => u.id === a.id);
       if (!full) {
-        setMsg({ ok: false, text: '未找到该用户信息' });
+        setMsg({ ok: false, text: t('authors.userNotFound') });
         return;
       }
       setEditTarget(full);
     } catch (e: any) {
-      setMsg({ ok: false, text: e.message || '加载用户信息失败' });
+      setMsg({ ok: false, text: e.message || t('authors.loadUserFailed') });
     }
   };
 
   const handleDelete = async (a: AuthorInfo) => {
     const name = a.nickname || a.username;
     // 第一层确认（先弹，不依赖异步请求）
-    if (!(await confirmDanger(`确认删除「${name}」？其文章将变为无作者状态，此操作不可恢复！`))) return;
+    if (!(await confirmDanger(t('authors.deleteConfirm', { name })))) return;
     try {
       // 初始 admin 删除权限 5 目标：二次确认；查询失败不阻断，后端会做最终过滤
       const all = await userApi.list();
@@ -122,7 +124,7 @@ export function AuthorsPage() {
       if (full && (full.is_admin || full.permission_level >= 5)) {
         const adminIds = all.filter((u) => u.is_admin).map((u) => u.id);
         if (adminIds.length > 0 && currentUserId === Math.min(...adminIds)) {
-          if (!(await confirmDanger(`「${name}」是权限 5 的账户，确认删除？此操作不可恢复！`))) return;
+          if (!(await confirmDanger(t('authors.deleteAdminConfirm', { name })))) return;
         }
       }
     } catch {
@@ -134,24 +136,24 @@ export function AuthorsPage() {
   return (
     <div className={s.pageContainer}>
       <div className={s.pageHeader}>
-        <h2 style={{ margin: 0 }}>作者</h2>
+        <h2 style={{ margin: 0 }}>{t('authors.title')}</h2>
       </div>
 
       {msg && (
         <MessageBar intent={msg.ok ? 'success' : 'error'}>
           <MessageBarBody>
-            <MessageBarTitle>{msg.ok ? '成功' : '失败'}</MessageBarTitle>
+            <MessageBarTitle>{msg.ok ? t('common.success') : t('common.fail')}</MessageBarTitle>
             {msg.text}
           </MessageBarBody>
         </MessageBar>
       )}
 
       {isLoading ? (
-        <Spinner label="加载中..." />
+        <Spinner label={t('common.loading')} />
       ) : authors.length === 0 ? (
         <div className={s.emptyState}>
           <PeopleRegular fontSize={36} />
-          <p>暂无作者</p>
+          <p>{t('authors.empty')}</p>
         </div>
       ) : (
         <>
@@ -166,12 +168,12 @@ export function AuthorsPage() {
                       ? [
                           {
                             icon: <EditRegular />,
-                            label: '编辑',
+                            label: t('common.edit'),
                             onClick: () => openEdit(a),
                           },
                           {
                             icon: <DeleteRegular />,
-                            label: '删除',
+                            label: t('common.delete'),
                             danger: true,
                             onClick: () => handleDelete(a),
                           },
@@ -182,7 +184,7 @@ export function AuthorsPage() {
                   <div
                     className={styles.authorCard}
                     onClick={() => navigate(`/?author=${a.id}`)}
-                    title={`查看 ${name} 的全部文章`}
+                    title={t('authors.viewAllArticles', { name })}
                   >
                     <Avatar
                       size={48}
@@ -195,7 +197,7 @@ export function AuthorsPage() {
                           {name}
                         </strong>
                         <Badge appearance="tint" color="brand">
-                          {a.resource_count} 篇
+                          {a.resource_count} {t('list.unit.article')}
                         </Badge>
                       </div>
                       {a.bio && <div className={styles.bio}>{a.bio}</div>}
@@ -213,7 +215,7 @@ export function AuthorsPage() {
       <UserEditDialog
         target={editTarget}
         onClose={() => setEditTarget(null)}
-        onChanged={() => setMsg({ ok: true, text: '作者信息已保存' })}
+        onChanged={() => setMsg({ ok: true, text: t('authors.saved') })}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-// 分类管理页：树形多级子分类，拖拽排序 / 拖动变成子分类，浮动批量操作栏
+// {t('categories.title')}页：树形多级子分类，拖拽排序 / 拖动变成子分类，浮动批量操作栏
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -47,6 +47,7 @@ import type { Category, CreateCategory } from '../types/models';
 import { useSelection, BatchBar, runBatchAction } from '../components/Selection';
 import { CategoryTreeSelect } from '../components/CategoryTreeSelect';
 import { useSharedStyles } from '../styles/shared';
+import { useLanguage } from '../i18n';
 
 // 前端可编辑的树节点
 interface DragNode {
@@ -230,6 +231,7 @@ function DragRow({
   onDelete: (id: number, name: string) => void;
 }) {
   const styles = useRowStyles();
+  const { t } = useLanguage();
   const { node, depth, hasChildren, collapsed } = row;
 
   const {
@@ -272,7 +274,7 @@ function DragRow({
       {/* 拖拽手柄：拖到同级位置=排序，拖到某行中部=变成其子分类 */}
       <span
         className={styles.dragHandle}
-        title="拖拽排序 / 拖到某分类上变成其子分类"
+        title={t('categories.dragHandleTitle')}
         {...attributes}
         {...listeners}
         onClick={(e) => e.stopPropagation()}
@@ -322,7 +324,7 @@ function DragRow({
           appearance="subtle"
           icon={<AddRegular />}
           onClick={() => onAddChild(node.id)}
-          title="添加子分类"
+          title={t('categories.addChild')}
           disabled={disabled}
         />
         <Button
@@ -342,7 +344,7 @@ function DragRow({
               deleted_at: null,
             })
           }
-          title="编辑"
+          title={t('common.edit')}
           disabled={disabled}
         />
         <Button
@@ -350,7 +352,7 @@ function DragRow({
           appearance="subtle"
           icon={<DeleteRegular />}
           onClick={() => onDelete(node.id, node.name)}
-          title="删除"
+          title={t('common.delete')}
           disabled={disabled}
         />
       </div>
@@ -360,6 +362,7 @@ function DragRow({
 
 export function CategoriesPage() {
   const s = useSharedStyles();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const canArticle = usePerms().can('article');
   const selection = useSelection();
@@ -489,7 +492,7 @@ export function CategoriesPage() {
   };
 
   const handleDelete = async (id: number, name: string) => {
-    if (await confirmDanger(`确认删除分类「${name}」及其所有子分类？关联资源不会被删除。`)) {
+    if (await confirmDanger(t('categories.deleteConfirm', { name }))) {
       deleteMut.mutate(id);
     }
   };
@@ -497,7 +500,7 @@ export function CategoriesPage() {
   const batchDelete = () =>
     runBatchAction(
       selection,
-      (n) => `确认删除选中的 ${n} 个分类（含各自子分类）？关联资源不会被删除。`,
+      (n) => t('categories.batchDeleteConfirm', { n }),
       (id) => categoryApi.delete(id),
       () => {
         queryClient.invalidateQueries({ queryKey: ['categories-tree'] });
@@ -605,7 +608,7 @@ export function CategoriesPage() {
       queryClient.invalidateQueries({ queryKey: ['categories-tree'] });
       queryClient.invalidateQueries({ queryKey: ['categories-flat'] });
     } catch (err: any) {
-      await notifyError(err?.message || '排序保存失败');
+      await notifyError(err?.message || t('categories.saveOrderFailed'));
       // 失败时恢复服务器数据
       queryClient.invalidateQueries({ queryKey: ['categories-tree'] });
     } finally {
@@ -622,7 +625,7 @@ export function CategoriesPage() {
     <div className={s.pageContainer}>
       <div className={s.pageHeader}>
         <h2 style={{ margin: 0 }}>
-          分类管理
+          {t('categories.title')}
           <span
             style={{
               marginLeft: '12px',
@@ -631,21 +634,21 @@ export function CategoriesPage() {
               color: tokens.colorNeutralForeground3,
             }}
           >
-            拖动手柄可排序，拖到分类中部可变成其子分类
+            {t('categories.dragHint')}
           </span>
         </h2>
       </div>
       <div>
         <Button icon={<AddRegular />} appearance="primary" onClick={() => openCreate(null)} disabled={!canArticle}>
-          新建分类
+          {t('categories.new')}
         </Button>
       </div>
 
       {isLoading ? (
-        <Spinner label="加载中..." />
+        <Spinner label={t('common.loading')} />
       ) : nodes.length === 0 ? (
         <div style={{ padding: '48px', textAlign: 'center', color: tokens.colorNeutralForeground3 }}>
-          暂无分类，点击右上角新建
+          {t('categories.empty')}
         </div>
       ) : (
         <DndContext
@@ -693,7 +696,7 @@ export function CategoriesPage() {
           onClick={batchDelete}
           disabled={!canArticle || deleteMut.isPending}
         >
-          批量删除
+          {t('categories.batchDelete')}
         </Button>
       </BatchBar>
 
@@ -701,52 +704,58 @@ export function CategoriesPage() {
       <Dialog open={createOpen} onOpenChange={(_, e: DialogOpenChangeData) => setCreateOpen(e.open)}>
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>新建分类</DialogTitle>
+            <DialogTitle>{t('categories.new')}</DialogTitle>
             <DialogContent>
               <div className={s.field}>
-                <Label htmlFor="create-name">名称 *</Label>
+                <Label htmlFor="create-name">{t('categories.nameRequired')}</Label>
                 <Input
                   id="create-name"
                   value={createName}
                   onChange={(_, d) => setCreateName(d.value)}
-                  placeholder="分类名称"
+                  placeholder={t('categories.namePlaceholder')}
                 />
               </div>
               <div className={s.field}>
-                <Label htmlFor="create-slug">URL 标识（可选）</Label>
+                <Label htmlFor="create-slug">
+                  {t('categories.urlSlug')}
+                  {t('common.optional')}
+                </Label>
                 <Input
                   id="create-slug"
                   value={createSlug}
                   onChange={(_, d) => setCreateSlug(d.value)}
-                  placeholder="如：software"
+                  placeholder={t('categories.slugPlaceholder')}
                 />
               </div>
               <div className={s.field}>
-                <Label htmlFor="create-desc">描述（可选）</Label>
+                <Label htmlFor="create-desc">
+                  {t('categories.description')}
+                  {t('common.optional')}
+                </Label>
                 <Textarea
                   id="create-desc"
                   value={createDescription}
                   onChange={(_, d) => setCreateDescription(d.value)}
-                  placeholder="分类描述"
+                  placeholder={t('categories.descPlaceholder')}
                 />
               </div>
               <div className={s.field}>
-                <Label>父分类（不选则为顶级分类，拖动排序也可快速调整层级）</Label>
+                <Label>{t('categories.parent')}</Label>
                 <CategoryTreeSelect
                   categories={tree}
                   value={createParentId}
                   onChange={setCreateParentId}
-                  emptyLabel="（顶级分类）"
+                  emptyLabel={t('categories.topLevel')}
                   style={{ minWidth: '240px' }}
                 />
               </div>
             </DialogContent>
             <DialogActions>
               <DialogTrigger>
-                <Button appearance="secondary">取消</Button>
+                <Button appearance="secondary">{t('common.cancel')}</Button>
               </DialogTrigger>
               <Button appearance="primary" onClick={handleCreate} disabled={!createName.trim() || createMut.isPending}>
-                创建
+                {t('categories.create')}
               </Button>
             </DialogActions>
           </DialogBody>
@@ -757,27 +766,27 @@ export function CategoriesPage() {
       <Dialog open={editOpen} onOpenChange={(_, e: DialogOpenChangeData) => setEditOpen(e.open)}>
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>编辑分类</DialogTitle>
+            <DialogTitle>{t('categories.editDialog')}</DialogTitle>
             <DialogContent>
               <div className={s.field}>
-                <Label htmlFor="edit-name">名称 *</Label>
+                <Label htmlFor="edit-name">{t('categories.nameRequired')}</Label>
                 <Input id="edit-name" value={editName} onChange={(_, d) => setEditName(d.value)} />
               </div>
               <div className={s.field}>
-                <Label htmlFor="edit-slug">URL 标识</Label>
+                <Label htmlFor="edit-slug">{t('categories.urlSlug')}</Label>
                 <Input id="edit-slug" value={editSlug} onChange={(_, d) => setEditSlug(d.value)} />
               </div>
               <div className={s.field}>
-                <Label htmlFor="edit-desc">描述</Label>
+                <Label htmlFor="edit-desc">{t('categories.description')}</Label>
                 <Textarea id="edit-desc" value={editDescription} onChange={(_, d) => setEditDescription(d.value)} />
               </div>
               <div className={s.field}>
-                <Label>父分类（拖动排序也可快速调整层级）</Label>
+                <Label>{t('categories.parentEdit')}</Label>
                 <CategoryTreeSelect
                   categories={tree}
                   value={editParentId}
                   onChange={setEditParentId}
-                  emptyLabel="（顶级分类）"
+                  emptyLabel={t('categories.topLevel')}
                   excludeSubtreeOf={editId}
                   style={{ minWidth: '240px' }}
                 />
@@ -785,10 +794,10 @@ export function CategoriesPage() {
             </DialogContent>
             <DialogActions>
               <DialogTrigger>
-                <Button appearance="secondary">取消</Button>
+                <Button appearance="secondary">{t('common.cancel')}</Button>
               </DialogTrigger>
               <Button appearance="primary" onClick={handleUpdate} disabled={!editName.trim() || updateMut.isPending}>
-                保存
+                {t('common.save')}
               </Button>
             </DialogActions>
           </DialogBody>

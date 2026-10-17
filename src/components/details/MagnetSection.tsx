@@ -15,6 +15,7 @@ import { torrentApi } from '../../lib/tauri';
 import { formatBytes } from '../../lib/format';
 import type { ParsedTorrentFile, FetchStatus } from '../../types/models';
 import { useStyles, type MtGroup } from './shared';
+import { useLanguage } from '../../i18n';
 
 export function MagnetSection({
   rid,
@@ -32,6 +33,7 @@ export function MagnetSection({
   onOpenTorrent: (g: MtGroup) => void;
 }) {
   const styles = useStyles();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   // 文件列表展开状态：{ itemId: { expanded, files, loading, cached } }
@@ -66,7 +68,7 @@ export function MagnetSection({
         } catch {
           setFetchState((s) => ({
             ...s,
-            [itemId]: { status: 'failed', error: '查询状态失败', count: 0, torrent_path: '' },
+            [itemId]: { status: 'failed', error: t('magnet.queryFailed'), count: 0, torrent_path: '' },
           }));
         }
       };
@@ -136,11 +138,15 @@ export function MagnetSection({
       {groups.map((g, idx) => (
         <div key={g.itemId} className={styles.itemBlock} data-mt-index={idx} data-mt-item-id={g.itemId}>
           <div className={styles.itemHeader}>
-            <LinkRegular /> 磁力种子 #{idx + 1}
+            <LinkRegular /> {t('magnet.seedN', { n: idx + 1 })}
           </div>
           {g.description && <div className={styles.itemDesc}>{g.description}</div>}
           {g.magnetContent && (
-            <div className={styles.magnetContent} onClick={() => copyMagnet(g.magnetContent)} title="点击复制磁力链接">
+            <div
+              className={styles.magnetContent}
+              onClick={() => copyMagnet(g.magnetContent)}
+              title={t('magnet.copyTitle')}
+            >
               <span style={{ flex: 1 }}>{g.magnetContent}</span>
               <CopyRegular />
             </div>
@@ -156,19 +162,19 @@ export function MagnetSection({
                 disabled={['pending', 'running'].includes(fetchState[g.itemId]?.status || '')}
               >
                 {fetchState[g.itemId]?.status === 'running'
-                  ? '下载中...'
+                  ? t('magnet.downloading')
                   : fetchState[g.itemId]?.status === 'pending'
-                    ? '排队中...'
-                    : '获取BT文件'}
+                    ? t('magnet.queued')
+                    : t('magnet.getBt')}
               </Button>
               {fetchState[g.itemId]?.status === 'failed' && (
                 <span style={{ fontSize: '12px', color: tokens.colorPaletteRedForeground1 }}>
-                  {fetchState[g.itemId]?.error || '下载失败'}
+                  {fetchState[g.itemId]?.error || t('magnet.downloadFailed')}
                 </span>
               )}
               {fetchState[g.itemId]?.status === 'done' && (
                 <span style={{ fontSize: '12px', color: tokens.colorPaletteGreenForeground1 }}>
-                  已获取，包含 {fetchState[g.itemId]?.count} 个文件
+                  {t('magnet.fetched', { n: fetchState[g.itemId]?.count })}
                 </span>
               )}
             </div>
@@ -177,7 +183,7 @@ export function MagnetSection({
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               <WarningRegular color={tokens.colorPaletteRedForeground1} />
               <span style={{ fontSize: '12px', color: tokens.colorPaletteRedForeground1 }}>
-                种子文件已丢失（可能被手动删除）
+                {t('magnet.torrentLost')}
               </span>
               {g.magnetContent ? (
                 <>
@@ -189,14 +195,14 @@ export function MagnetSection({
                     disabled={['pending', 'running'].includes(fetchState[g.itemId]?.status || '')}
                   >
                     {fetchState[g.itemId]?.status === 'running'
-                      ? '重新下载中...'
+                      ? t('magnet.redownloading')
                       : fetchState[g.itemId]?.status === 'pending'
-                        ? '排队中...'
-                        : '重新获取BT文件'}
+                        ? t('magnet.queued')
+                        : t('magnet.regetBt')}
                   </Button>
                   {fetchState[g.itemId]?.status === 'failed' && (
                     <span style={{ fontSize: '12px', color: tokens.colorPaletteRedForeground1 }}>
-                      {fetchState[g.itemId]?.error || '下载失败'}
+                      {fetchState[g.itemId]?.error || t('magnet.downloadFailed')}
                     </span>
                   )}
                 </>
@@ -208,7 +214,7 @@ export function MagnetSection({
                     icon={<EditRegular />}
                     onClick={() => navigate(`/edit/${resourceId}`)}
                   >
-                    编辑文章重新上传
+                    {t('magnet.editReupload')}
                   </Button>
                 )
               )}
@@ -221,7 +227,7 @@ export function MagnetSection({
                 icon={<ArrowDownloadRegular />}
                 onClick={() => onOpenTorrent(g)}
               >
-                下载种子
+                {t('magnet.downloadTorrent')}
               </Button>
               <Button
                 appearance="subtle"
@@ -229,7 +235,7 @@ export function MagnetSection({
                 icon={<DocumentRegular />}
                 onClick={() => toggleFiles(g.itemId, g.torrentPath)}
               >
-                {filesState[g.itemId]?.expanded ? '收起文件列表' : '查看文件列表'}
+                {filesState[g.itemId]?.expanded ? t('magnet.collapseFiles') : t('magnet.expandFiles')}
               </Button>
               {g.torrentFileName && (
                 <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground2 }}>{g.torrentFileName}</span>
@@ -248,7 +254,7 @@ export function MagnetSection({
                     fontSize: '13px',
                   }}
                 >
-                  解析中...
+                  {t('magnet.parsing')}
                 </div>
               ) : filesState[g.itemId]?.files.length === 0 ? (
                 <div
@@ -259,17 +265,18 @@ export function MagnetSection({
                     fontSize: '13px',
                   }}
                 >
-                  未解析到文件列表
+                  {t('magnet.noFiles')}
                 </div>
               ) : (
                 <>
                   <div className={styles.filesHeader}>
                     <span>
-                      {filesState[g.itemId]?.cached ? '（已缓存）' : '（本次解析）'}共{' '}
-                      {filesState[g.itemId]?.files.length} 项
+                      {filesState[g.itemId]?.cached ? t('magnet.cached') : t('magnet.parsedNow')}
+                      {t('magnet.totalLabel')} {filesState[g.itemId]?.files.length} {t('magnet.unitItem')}
                     </span>
                     <span>
-                      合计 {formatBytes(filesState[g.itemId]?.files.reduce((s, f) => s + (f.size || 0), 0) || 0)}
+                      {t('magnet.totalSize')}{' '}
+                      {formatBytes(filesState[g.itemId]?.files.reduce((s, f) => s + (f.size || 0), 0) || 0)}
                     </span>
                   </div>
                   <table className={styles.filesTable}>

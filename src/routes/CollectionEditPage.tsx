@@ -36,6 +36,7 @@ import { MarkdownEditor } from '../components/MarkdownEditor';
 import { TranslateButton } from '../components/common/TranslateButton';
 import { usePerms } from '../hooks/usePerms';
 import { useAuthStore } from '../stores/authStore';
+import { useLanguage } from '../i18n';
 
 const useStyles = makeStyles({
   container: { display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '900px' },
@@ -46,6 +47,7 @@ const useStyles = makeStyles({
 
 export function CollectionEditPage() {
   const styles = useStyles();
+  const { t } = useLanguage();
   const { cid } = useParams<{ cid: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -61,7 +63,7 @@ export function CollectionEditPage() {
   const [accessPassword, setAccessPassword] = useState('');
   // 服务端记录的密码状态：是否已设置（不回传密码本身）
   const [hasPassword, setHasPassword] = useState(false);
-  // 本次保存是否清除访问密码
+  // 本次保存是否{t('edit.clear')}访问密码
   const [clearPassword, setClearPassword] = useState(false);
   const [thumbnailPath, setThumbnailPath] = useState('');
   // 选中但尚未上传的本地封面（保存时才上传）
@@ -107,7 +109,10 @@ export function CollectionEditPage() {
   const uploadContentAsset = async (kind: 'image' | 'file') => {
     const selected = await openDialog({
       multiple: false,
-      filters: kind === 'image' ? [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }] : undefined,
+      filters:
+        kind === 'image'
+          ? [{ name: t('edit.filterImage'), extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }]
+          : undefined,
     });
     if (typeof selected !== 'string') return null;
     const name = selected.split(/[\\/]/).pop() || 'file';
@@ -118,14 +123,14 @@ export function CollectionEditPage() {
   const pickThumbnail = async () => {
     const selected = await openDialog({
       multiple: false,
-      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }],
+      filters: [{ name: t('edit.filterImage'), extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }],
     });
     if (typeof selected === 'string') setPendingThumbnail(selected);
   };
 
   const saveMut = useMutation({
     mutationFn: async () => {
-      if (!title.trim()) throw new Error('请填写合集名称');
+      if (!title.trim()) throw new Error(t('collectionEdit.nameRequired'));
 
       // 1. 上传正文内暂存的本地附件（替换 __pending__ 占位符）
       let finalContent = content;
@@ -177,20 +182,20 @@ export function CollectionEditPage() {
       queryClient.invalidateQueries({ queryKey: ['collection', savedId ?? cidNum] });
       navigate(`/collection/${savedId ?? cidNum}`);
     },
-    onError: (e: Error) => setError(e.message || '保存失败'),
+    onError: (e: Error) => setError(e.message || t('edit.saveFailed')),
   });
 
-  if (isEdit && isLoading) return <Spinner label="加载中..." />;
+  if (isEdit && isLoading) return <Spinner label={t('common.loading')} />;
   // 取数失败（如无查看权限）时不要一直转圈
   if (isEdit && !loaded) {
     if (loadError) {
       return (
         <MessageBar intent="error">
-          <MessageBarBody>{errorText(loadError) || '加载合集失败'}</MessageBarBody>
+          <MessageBarBody>{errorText(loadError) || t('collectionEdit.loadFailed')}</MessageBarBody>
         </MessageBar>
       );
     }
-    return <Spinner label="加载中..." />;
+    return <Spinner label={t('common.loading')} />;
   }
 
   return (
@@ -202,10 +207,10 @@ export function CollectionEditPage() {
           icon={<ArrowLeftRegular />}
           onClick={() => navigate(isEdit ? `/collection/${cidNum}` : '/collections')}
         >
-          返回
+          {t('detail.back')}
         </Button>
         <Button appearance="primary" onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !title.trim()}>
-          {saveMut.isPending ? '保存中...' : '保存'}
+          {saveMut.isPending ? t('edit.saving') : t('common.save')}
         </Button>
       </div>
 
@@ -218,27 +223,27 @@ export function CollectionEditPage() {
       {/* 基本信息 */}
       <Card style={{ padding: '16px' }}>
         <div className={styles.field}>
-          <Label htmlFor="title">名称 *</Label>
+          <Label htmlFor="title">{t('categories.nameRequired')}</Label>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
             <Input
               id="title"
               value={title}
               onChange={(_, d) => setTitle(d.value)}
-              placeholder="合集名称"
+              placeholder={t('collectionEdit.namePlaceholder')}
               style={{ flex: 1 }}
             />
             <TranslateButton value={title} onChange={setTitle} />
           </div>
         </div>
         <div className={styles.field}>
-          <Label htmlFor="desc">描述</Label>
+          <Label htmlFor="desc">{t('collectionEdit.description')}</Label>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
             <Textarea
               id="desc"
               value={description}
               onChange={(_, d) => setDescription(d.value)}
               rows={2}
-              placeholder="可选描述"
+              placeholder={t('collectionEdit.descPlaceholder')}
               style={{ flex: 1 }}
             />
             <TranslateButton value={description} onChange={setDescription} />
@@ -246,32 +251,32 @@ export function CollectionEditPage() {
         </div>
         <div className={styles.row}>
           <div className={styles.field}>
-            <Label>可见性</Label>
+            <Label>{t('collectionEdit.visibility')}</Label>
             <Dropdown
-              value={visibility === 'public' ? '公开' : '私有'}
+              value={visibility === 'public' ? t('collectionEdit.public') : t('collectionEdit.private')}
               selectedOptions={[visibility]}
               onOptionSelect={(_, d) => {
                 if (d.optionValue) setVisibility(d.optionValue);
               }}
             >
-              <Option value="private" text="私有">
-                私有
+              <Option value="private" text={t('collectionEdit.private')}>
+                {t('collectionEdit.private')}
               </Option>
-              <Option value="public" text="公开">
-                公开
+              <Option value="public" text={t('collectionEdit.public')}>
+                {t('collectionEdit.public')}
               </Option>
             </Dropdown>
           </div>
           {isAdmin && (
             <div className={styles.field}>
-              <Label>发布身份（马甲）</Label>
+              <Label>{t('edit.authorMask')}</Label>
               <Dropdown
                 value={
                   authorId == null
-                    ? '当前账号'
+                    ? t('edit.currentAccount')
                     : authors?.find((a) => a.id === authorId)
                       ? `${authors.find((a) => a.id === authorId)!.nickname || authors.find((a) => a.id === authorId)!.username}`
-                      : `用户 #${authorId}`
+                      : t('edit.unknownUser', { id: authorId })
                 }
                 selectedOptions={[String(authorId ?? 'me')]}
                 onOptionSelect={(_, d) => {
@@ -279,8 +284,8 @@ export function CollectionEditPage() {
                   setAuthorId(v === 'me' ? null : Number(v));
                 }}
               >
-                <Option value="me" text="当前账号">
-                  当前账号
+                <Option value="me" text={t('edit.currentAccount')}>
+                  {t('edit.currentAccount')}
                 </Option>
                 {authors?.map((a) => (
                   <Option key={a.id} value={String(a.id)} text={a.nickname || a.username}>
@@ -292,12 +297,12 @@ export function CollectionEditPage() {
           )}
         </div>
         <div className={styles.field}>
-          <Label htmlFor="pwd">访问密码</Label>
+          <Label htmlFor="pwd">{t('edit.accessPassword')}</Label>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Input
               id="pwd"
               type="password"
-              placeholder={hasPassword ? '已设置密码，留空则不修改' : '留空 = 不设密码'}
+              placeholder={hasPassword ? t('edit.pwdSetLeaveEmpty') : t('edit.pwdEmpty')}
               value={accessPassword}
               onChange={(_, d) => {
                 setAccessPassword(d.value);
@@ -312,24 +317,24 @@ export function CollectionEditPage() {
                   setAccessPassword('');
                 }}
               >
-                {clearPassword ? '撤销清除' : '清除密码'}
+                {clearPassword ? t('edit.undoClearPwd') : t('edit.clearPwd')}
               </Button>
             )}
           </div>
           <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
             {clearPassword
-              ? '保存后清除访问密码'
+              ? t('collectionEdit.pwdClearHint')
               : accessPassword
-                ? '保存后设为新的访问密码，读者需凭密码查看'
+                ? t('collectionEdit.pwdSetNewHint')
                 : hasPassword
-                  ? '已设置访问密码，留空则保持不变（作者本人与管理员不受密码限制）'
+                  ? t('collectionEdit.pwdKeepHint')
                   : visibility === 'public'
-                    ? '提示：公开且不设密码 = 任何人（包括未登录用户）可访问'
-                    : '提示：私有合集仅作者本人、管理员，或凭密码解锁后可访问'}
+                    ? t('collectionEdit.pwdPublicHint')
+                    : t('collectionEdit.pwdPrivateHint')}
           </span>
         </div>
         <div className={styles.field}>
-          <Label>封面</Label>
+          <Label>{t('collectionEdit.cover')}</Label>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             {pendingThumbnail || thumbnailPath ? (
               <img
@@ -341,7 +346,7 @@ export function CollectionEditPage() {
                   backgroundColor: tokens.colorNeutralBackground3,
                 }}
                 src={pendingThumbnail ? convertFileSrc(pendingThumbnail) : assetUrl(thumbnailPath)}
-                alt="封面"
+                alt={t('collectionEdit.cover')}
               />
             ) : (
               <div
@@ -357,12 +362,12 @@ export function CollectionEditPage() {
                   fontSize: '12px',
                 }}
               >
-                无（保存时取正文首图）
+                {t('collectionEdit.coverNone')}
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <Button appearance="outline" size="small" icon={<ArrowUploadRegular />} onClick={pickThumbnail}>
-                {pendingThumbnail || thumbnailPath ? '更换封面' : '上传封面'}
+                {pendingThumbnail || thumbnailPath ? t('collectionEdit.changeCover') : t('collectionEdit.uploadCover')}
               </Button>
               {(pendingThumbnail || thumbnailPath) && (
                 <Button
@@ -374,7 +379,7 @@ export function CollectionEditPage() {
                     setThumbnailPath('');
                   }}
                 >
-                  清除
+                  {t('edit.clear')}
                 </Button>
               )}
             </div>
@@ -382,14 +387,14 @@ export function CollectionEditPage() {
         </div>
         <div className={styles.field} style={{ marginBottom: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-            <Label>正文（Markdown，支持粘贴图片自动本地化）</Label>
+            <Label>{t('collectionEdit.contentLabel')}</Label>
             <TranslateButton value={content} onChange={setContent} />
           </div>
           <MarkdownEditor
             value={content}
             onChange={setContent}
             height={480}
-            placeholder="在此输入合集介绍正文..."
+            placeholder={t('collectionEdit.contentPlaceholder')}
             upload={uploadContentAsset}
           />
         </div>

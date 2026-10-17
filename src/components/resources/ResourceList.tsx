@@ -14,6 +14,7 @@ import { useSharedStyles } from '../../styles/shared';
 import { useUIStore } from '../../stores/uiStore';
 import { settingsApi } from '../../lib/tauri';
 import { clampPageSize } from '../../lib/listSettings';
+import { useLanguage } from '../../i18n';
 
 export interface ResourceListProps {
   /** react-query 键前缀（变化时自动重新查询） */
@@ -59,12 +60,13 @@ export function ResourceList({
   onPageChange,
   resetKey,
   emptyText,
-  allLoadedUnit = '项',
+  allLoadedUnit,
   toolbar,
   actions,
   batchBusy = false,
 }: ResourceListProps) {
   const s = useSharedStyles();
+  const { t } = useLanguage();
   const { viewMode } = useUIStore();
   const [innerPage, setInnerPage] = useState(1);
   const page = pageProp ?? innerPage;
@@ -148,7 +150,7 @@ export function ResourceList({
       {toolbar}
 
       {isLoading ? (
-        <Spinner label="加载中..." />
+        <Spinner label={t('common.loading')} />
       ) : items.length === 0 ? (
         <div className={s.emptyState}>{emptyText}</div>
       ) : (
@@ -187,14 +189,14 @@ export function ResourceList({
       {isInfinite && items.length > 0 && (
         <div ref={sentinelRef} style={{ display: 'flex', justifyContent: 'center', padding: '16px 0 8px' }}>
           {infiniteQuery.isFetchingNextPage ? (
-            <Spinner size="tiny" label="加载更多…" />
+            <Spinner size="tiny" label={t('list.loadMore')} />
           ) : infiniteQuery.hasNextPage ? (
             <Button size="small" appearance="subtle" onClick={() => infiniteQuery.fetchNextPage()}>
-              加载更多
+              {t('list.loadMore')}
             </Button>
           ) : (
             <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-              已加载全部 {total} {allLoadedUnit}
+              {t('list.allLoaded', { n: total, unit: allLoadedUnit ?? t('list.unit.item') })}
             </span>
           )}
         </div>

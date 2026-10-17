@@ -15,6 +15,7 @@ import {
 import { ZoomInRegular, ZoomOutRegular } from '@fluentui/react-icons';
 import { authApi, userApi } from '../lib/tauri';
 import { useAuthStore } from '../stores/authStore';
+import { useLanguage } from '../i18n';
 
 const VIEW = 300; // 裁剪视口尺寸（正方形）
 const OUTPUT = 256; // 输出头像尺寸
@@ -30,6 +31,7 @@ interface Props {
 
 export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }: Props) {
   const setUser = useAuthStore((s) => s.setUser);
+  const { t } = useLanguage();
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   // scale = 显示像素 / 自然像素；x/y = 图片左上角相对视口的偏移
   const [scale, setScale] = useState(1);
@@ -146,7 +148,7 @@ export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }
       canvas.width = OUTPUT;
       canvas.height = OUTPUT;
       const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('无法创建画布');
+      if (!ctx) throw new Error(t('avatarCrop.canvasFailed'));
       ctx.imageSmoothingQuality = 'high';
       // 视口 300px 对应自然图上的区域：(-pos)/scale, VIEW/scale
       const sx = -pos.x / scale;
@@ -155,7 +157,7 @@ export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }
       const sh = VIEW / scale;
       ctx.drawImage(img, sx, sy, sw, sh, 0, 0, OUTPUT, OUTPUT);
       const blob = await new Promise<Blob>((res, rej) =>
-        canvas.toBlob((b) => (b ? res(b) : rej(new Error('生成图片失败'))), 'image/png'),
+        canvas.toBlob((b) => (b ? res(b) : rej(new Error(t('avatarCrop.blobFailed')))), 'image/png'),
       );
       const buf = await blob.arrayBuffer();
       let savedPath = '';
@@ -169,7 +171,7 @@ export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }
       onUploaded?.(savedPath);
       onClose();
     } catch (e: any) {
-      setError(e?.message || '头像上传失败');
+      setError(e?.message || t('avatarCrop.uploadFailed'));
     } finally {
       setBusy(false);
     }
@@ -192,7 +194,7 @@ export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }
     >
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>裁剪头像</DialogTitle>
+          <DialogTitle>{t('avatarCrop.title')}</DialogTitle>
           <DialogContent>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
               <div
@@ -227,7 +229,7 @@ export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }
                 {src && (
                   <img
                     src={src}
-                    alt="待裁剪头像"
+                    alt={t('avatarCrop.alt')}
                     onLoad={onImgLoad}
                     draggable={false}
                     style={{
@@ -257,22 +259,22 @@ export function AvatarCropDialog({ filePath, onClose, targetUserId, onUploaded }
                 <ZoomInRegular />
               </div>
               <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-                拖动调整位置，滑动缩放，输出 {OUTPUT}×{OUTPUT} 方形 PNG
+                {t('avatarCrop.hint', { size: OUTPUT })}
               </span>
               {error && <span style={{ fontSize: '12px', color: tokens.colorPaletteRedForeground1 }}>{error}</span>}
               {loadErr && (
                 <span style={{ fontSize: '12px', color: tokens.colorPaletteRedForeground1 }}>
-                  读取图片失败：{loadErr}
+                  {t('avatarCrop.readFailed', { error: loadErr })}
                 </span>
               )}
             </div>
           </DialogContent>
           <DialogActions>
             <Button appearance="secondary" onClick={onClose} disabled={busy}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button appearance="primary" onClick={confirm} disabled={!size || busy}>
-              {busy ? '上传中...' : '确认裁剪'}
+              {busy ? t('avatarCrop.uploading') : t('avatarCrop.confirm')}
             </Button>
           </DialogActions>
         </DialogBody>

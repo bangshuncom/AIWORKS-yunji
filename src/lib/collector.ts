@@ -1,6 +1,7 @@
 // 采集插件运行时：用 DOMParser 解析 HTML（不执行页面任何脚本），
 // 按插件 JSON 声明的选择器提取字段。第三方插件也只描述选择规则，无代码执行能力。
 import type { CollectorInfo } from './tauri';
+import { tOutside } from '../i18n';
 
 export interface CollectorPlugin {
   id: string;
@@ -44,7 +45,7 @@ export interface CollectResult {
 /** 解析后端返回的插件 raw JSON */
 export function parsePlugin(info: CollectorInfo): CollectorPlugin {
   const p = JSON.parse(info.raw) as CollectorPlugin;
-  if (!p.id || !p.fields) throw new Error('插件格式无效：缺少 id 或 fields');
+  if (!p.id || !p.fields) throw new Error(tOutside('collector.invalidPlugin'));
   return p;
 }
 

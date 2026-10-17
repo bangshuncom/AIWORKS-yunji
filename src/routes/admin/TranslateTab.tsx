@@ -28,9 +28,11 @@ import {
 import { TranslateRegular } from '@fluentui/react-icons';
 import { translateApi, settingsApi } from '../../lib/tauri';
 import { useStyles } from './styles';
+import { useLanguage } from '../../i18n';
 
 export function TranslateTab() {
   const styles = useStyles();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -116,9 +118,9 @@ export function TranslateTab() {
     mutationFn: () => settingsApi.update(buildPayload()),
     onSuccess: () => {
       afterSave();
-      setMsg({ ok: true, text: '翻译设置已保存' });
+      setMsg({ ok: true, text: t('translate.saved') });
     },
-    onError: (e: Error) => setMsg({ ok: false, text: e.message || '保存失败' }),
+    onError: (e: Error) => setMsg({ ok: false, text: e.message || t('edit.saveFailed') }),
   });
 
   // 测试前必须先落库：后端只按已保存的配置发起请求，
@@ -130,9 +132,9 @@ export function TranslateTab() {
     },
     onSuccess: (text) => {
       afterSave();
-      setMsg({ ok: true, text: `连接成功，示范译文：${text}` });
+      setMsg({ ok: true, text: t('translate.testOk', { text }) });
     },
-    onError: (e: Error) => setMsg({ ok: false, text: e.message || '连接失败' }),
+    onError: (e: Error) => setMsg({ ok: false, text: e.message || t('translate.testFailed') }),
   });
 
   // 拉取模型列表同样先落库：后端按「已保存」的地址与 Key 去请求 /models，
@@ -146,12 +148,12 @@ export function TranslateTab() {
       afterSave();
       setModels(list);
       if (list.length === 0) {
-        setMsg({ ok: false, text: '服务商没有返回任何模型，请手动填写模型名' });
+        setMsg({ ok: false, text: t('translate.noModels') });
       } else {
-        setMsg({ ok: true, text: `已获取 ${list.length} 个模型，在「模型名」下拉中选择即可` });
+        setMsg({ ok: true, text: t('translate.modelsFetched', { n: list.length }) });
       }
     },
-    onError: (e: Error) => setMsg({ ok: false, text: e.message || '获取模型列表失败' }),
+    onError: (e: Error) => setMsg({ ok: false, text: e.message || t('translate.fetchModelsFailed') }),
   });
   // 机翻引擎没有「模型列表」这回事，点它只会拿到一句明确的拒绝
 
@@ -184,7 +186,7 @@ export function TranslateTab() {
 
   // 等语言列表也到位再渲染：Dropdown 的显示文本靠 Option 反查，
   // 列表为空时首帧必然显示不出当前值（见下方 value 注释）。
-  if (isLoading || !loaded || !options) return <Spinner label="加载中..." />;
+  if (isLoading || !loaded || !options) return <Spinner label={t('common.loading')} />;
 
   const providers = cfg?.providers ?? [];
   const current = providers.find((p) => p.id === provider);
@@ -196,8 +198,8 @@ export function TranslateTab() {
   const savedHint = (savedIds: string[] | undefined, tail?: string): string | null => {
     if (!(savedIds ?? []).includes(provider)) return null;
     return provider === cfg?.provider && tail
-      ? `已保存（尾号 ${tail}），留空则不修改`
-      : `${current?.name ?? '该服务商'}已保存过，留空则沿用`;
+      ? t('translate.savedTail', { tail })
+      : t('translate.savedBefore', { name: current?.name ?? t('translate.thisProvider') });
   };
   const hint1 = savedHint(cfg?.providers_with_key, cfg?.api_key_tail);
   const hint2 = savedHint(cfg?.providers_with_key2, cfg?.api_key2_tail);
@@ -206,16 +208,18 @@ export function TranslateTab() {
   return (
     <Card className={styles.card}>
       <div className={styles.title}>
-        <TranslateRegular /> 翻译设置
+        <TranslateRegular /> {t('settings.tab.translate')}
       </div>
       <p style={{ marginTop: 0, fontSize: '13px', color: tokens.colorNeutralForeground2 }}>
-        编辑页的「翻译」按钮通过这里配置的引擎工作。所有登录用户共用这一份配置， 因此密钥<b>每个服务商只需填一次</b>
-        ，且各项设置都按服务商各存各的，
-        <b>切换服务商既不会覆盖、也不用重新输入</b>。文本会发送到所选服务商， 请留意内容是否适合外发。
+        {t('translate.descPrefix')}
+        <b>{t('translate.descBoldOnce')}</b>
+        {t('translate.descMid')}
+        <b>{t('translate.descBoldSwitch')}</b>
+        {t('translate.descSuffix')}
       </p>
 
       <div className={styles.field}>
-        <Label htmlFor="tr_provider">服务商</Label>
+        <Label htmlFor="tr_provider">{t('translate.provider')}</Label>
         {/*
           value 必须受控传入：Fluent 的 Dropdown 在不传 value 时，显示文本是从
           「已注册的 Option」里反查的，而首帧 Option 还没注册，于是显示为空白；
@@ -227,7 +231,7 @@ export function TranslateTab() {
           value={current ? `${current.name} · ${current.kind_label}` : provider}
           selectedOptions={[provider]}
           onOptionSelect={(_, d) => onProviderChange(d.optionValue ?? '')}
-          placeholder="请选择服务商"
+          placeholder={t('translate.providerPlaceholder')}
           style={{ minWidth: '280px', maxWidth: '420px' }}
           listbox={{ style: { minWidth: '280px' } }}
         >
@@ -245,7 +249,7 @@ export function TranslateTab() {
       {/* 机翻的域名由厂商固定，不露输入框：给它一个空框只会让人以为填错了要改 */}
       {baseUrlEditable ? (
         <div className={styles.field}>
-          <Label htmlFor="tr_base_url">接口地址（Base URL）</Label>
+          <Label htmlFor="tr_base_url">{t('translate.baseUrl')}</Label>
           <Input
             id="tr_base_url"
             value={baseUrl}
@@ -254,23 +258,22 @@ export function TranslateTab() {
             style={{ maxWidth: '480px' }}
           />
           <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-            {usesModel
-              ? '需兼容 OpenAI 的 /chat/completions 协议；地址或模型名以服务商控制台为准'
-              : '自建实例填自己的地址；官方托管版保持默认即可'}
+            {usesModel ? t('translate.baseUrlHintModel') : t('translate.baseUrlHintFixed')}
           </span>
         </div>
       ) : (
         <div className={styles.field}>
-          <Label>接口地址</Label>
+          <Label>{t('translate.baseUrlFixed')}</Label>
           <span style={{ fontSize: '13px', color: tokens.colorNeutralForeground2 }}>
-            {baseUrl || current?.base_url}（厂商固定，无需填写）
+            {baseUrl || current?.base_url}
+            {t('translate.vendorFixed')}
           </span>
         </div>
       )}
 
       {usesModel && (
         <div className={styles.field}>
-          <Label htmlFor="tr_model">模型名</Label>
+          <Label htmlFor="tr_model">{t('translate.model')}</Label>
           {/*
             Combobox + freeform：拉到模型列表时下拉选择，没拉到时照常手打。
             value 必须受控（同上面 Dropdown 的坑）；freeform 下输入走 onChange、
@@ -299,33 +302,30 @@ export function TranslateTab() {
               size="small"
               appearance="subtle"
               disabled={busy || !provider || (!cred1.trim() && !hint1)}
-              title={!cred1.trim() && !hint1 ? '拉取模型列表需要该服务商的 API Key 鉴权，请先在下方填写' : undefined}
+              title={!cred1.trim() && !hint1 ? t('translate.fetchModelsTitle') : undefined}
               onClick={() => fetchModelsMut.mutate()}
             >
-              {fetchModelsMut.isPending ? '获取中…' : '获取模型列表'}
+              {fetchModelsMut.isPending ? t('translate.fetching') : t('translate.fetchModels')}
             </Button>
           </div>
-          <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-            可手填；点「获取模型列表」会先保存当前设置，再从该服务商拉取可选模型。 列表接口同样需要该服务商的 API Key
-            鉴权，各服务商各用各的 Key。 厂商会下线旧模型：若翻译报 400 / 404，回到这里重新拉取或手动改名即可。
-          </span>
+          <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>{t('translate.modelHint')}</span>
         </div>
       )}
 
       {/* 凭证字段完全照后端的规格渲染：标签、占位符、说明都由引擎决定 */}
       <div className={styles.field}>
-        <Label htmlFor="tr_key">{current?.cred1.label ?? 'API Key'}</Label>
+        <Label htmlFor="tr_key">{current?.cred1.label ?? t('translate.apiKey')}</Label>
         <Input
           id="tr_key"
           type={current?.kind === 'my_memory' ? 'text' : 'password'}
           value={cred1}
           onChange={(_, d) => setCred1(d.value)}
-          placeholder={hint1 ?? current?.cred1.placeholder ?? '粘贴服务商控制台生成的密钥'}
+          placeholder={hint1 ?? current?.cred1.placeholder ?? t('translate.keyPlaceholder')}
           style={{ maxWidth: '480px' }}
         />
         <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
           {current?.cred1.hint}
-          {savedKeyCount > 0 && `；各服务商的密钥分别保存（已保存 ${savedKeyCount} 个）`}
+          {savedKeyCount > 0 && t('translate.keyCount', { n: savedKeyCount })}
         </span>
       </div>
 
@@ -341,7 +341,8 @@ export function TranslateTab() {
             style={{ maxWidth: '480px' }}
           />
           <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-            {current.cred2.hint}；与上面一项是一对，两个都要填
+            {current.cred2.hint}
+            {t('translate.cred2Pair')}
           </span>
         </div>
       )}
@@ -363,7 +364,7 @@ export function TranslateTab() {
       {/* 批大小是大模型特有的旋钮：机翻的单次上限由厂商规定，我们自动按上限切批，不用用户操心 */}
       {usesModel && (
         <div className={styles.field}>
-          <Label htmlFor="tr_batch">每批最大字数</Label>
+          <Label htmlFor="tr_batch">{t('translate.batchChars')}</Label>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Input
               id="tr_batch"
@@ -373,10 +374,10 @@ export function TranslateTab() {
               min={cfg?.batch_chars_min}
               max={cfg?.batch_chars_max}
               style={{ width: '130px' }}
-              contentAfter={<span style={{ fontSize: '12px' }}>字</span>}
+              contentAfter={<span style={{ fontSize: '12px' }}>{t('translate.charUnit')}</span>}
             />
             <Button size="small" appearance="subtle" onClick={() => setBatchChars(cfg?.batch_chars_default ?? 2000)}>
-              恢复默认（{cfg?.batch_chars_default ?? 2000}）
+              {t('translate.resetDefault', { n: cfg?.batch_chars_default ?? 2000 })}
             </Button>
           </div>
           {/*
@@ -396,21 +397,24 @@ export function TranslateTab() {
               maxWidth: '560px',
             }}
           >
-            一次翻译会把整篇切成若干批，每批发一次请求。<b>批越大越快</b>
-            ——省掉的是每段各自的网络往返和等待模型开口的时间。但有两个因素限制它：
-            <b>模型单次最大输出</b>（译文与原文长度相当，中译英还会更长，超限就被截断）， 以及本程序 <b>5 分钟</b>
-            的请求超时（批太大生成不完，这一批得重来）。
+            {t('translate.batchExpl1')}
+            <b>{t('translate.batchBoldFast')}</b>
+            {t('translate.batchExpl2')}
+            <b>{t('translate.batchBoldOutput')}</b>
+            {t('translate.batchExpl3')}
+            <b>{t('translate.batchBold5min')}</b>
+            {t('translate.batchExpl4')}
             <div style={{ marginTop: '6px' }}>
-              按<b>单次最大输出</b>参考：4K → 1000 字 · 16K → 3000 字 · 32K → 4000 字 · 96K → 5000 字 · 128K → 6000
-              字（再大基本只会先撞超时）
+              {t('translate.batchSizePrefix')}
+              <b>{t('translate.batchSizeBold')}</b>
+              {t('translate.batchSizeRest')}
             </div>
             <div style={{ marginTop: '6px' }}>
-              智谱免费模型（上下文 / 单次最大输出）：GLM-4.7-Flash 200K / 128K · GLM-4.5-Flash 128K / 96K · GLM-4-Flash
-              128K / 16K · GLM-4-Long 1M / 4K。 注意决定批大小的是<b>单次最大输出</b>，不是上下文窗口。
+              {t('translate.zhipuPrefix')}
+              <b>{t('translate.zhipuBold')}</b>
+              {t('translate.zhipuSuffix')}
             </div>
-            <div style={{ marginTop: '6px' }}>
-              填大了不会翻坏：真撞上输出上限时，这一批会自动拆成逐段重发，只是慢一点。
-            </div>
+            <div style={{ marginTop: '6px' }}>{t('translate.batchSafe')}</div>
           </div>
         </div>
       )}
@@ -418,18 +422,18 @@ export function TranslateTab() {
       {/* 机翻引擎的单次上限是厂商规定的，这里只说明程序怎么处理，不给旋钮 */}
       {!usesModel && (
         <p style={{ margin: '2px 0 0', fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-          机器翻译引擎的单次长度上限由厂商规定，程序会按其上限自动分批、 超长段落自动切开后再拼接，无需手动设置批大小。
+          {t('translate.mtLimit')}
         </p>
       )}
 
       <div className={styles.field}>
-        <Label htmlFor="tr_lang">默认目标语言</Label>
+        <Label htmlFor="tr_lang">{t('translate.targetLang')}</Label>
         <Dropdown
           id="tr_lang"
           value={currentLang?.name ?? targetLang}
           selectedOptions={[targetLang]}
           onOptionSelect={(_, d) => setTargetLang(d.optionValue ?? 'zh')}
-          placeholder="请选择语言"
+          placeholder={t('translate.langPlaceholder')}
           style={{ minWidth: '160px', maxWidth: '220px' }}
         >
           {langs.map((l) => (
@@ -439,15 +443,15 @@ export function TranslateTab() {
           ))}
         </Dropdown>
         <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-          编辑页翻译时仍可临时改选其它语言
-          {!usesModel && '；各引擎的语言码由程序自动换算，无需手工填代码'}
+          {t('translate.langHint')}
+          {!usesModel && t('translate.langHintMt')}
         </span>
       </div>
 
       {msg && (
         <MessageBar intent={msg.ok ? 'success' : 'error'} className={styles.feedback}>
           <MessageBarBody>
-            <MessageBarTitle>{msg.ok ? '成功' : '失败'}</MessageBarTitle>
+            <MessageBarTitle>{msg.ok ? t('common.success') : t('common.fail')}</MessageBarTitle>
             {msg.text}
           </MessageBarBody>
         </MessageBar>
@@ -455,10 +459,10 @@ export function TranslateTab() {
 
       <div style={{ display: 'flex', gap: '8px' }}>
         <Button appearance="primary" onClick={() => saveMut.mutate()} disabled={busy}>
-          保存设置
+          {t('translate.save')}
         </Button>
         <Button onClick={() => testMut.mutate()} disabled={busy}>
-          {testMut.isPending ? '测试中…' : '保存并测试连接'}
+          {testMut.isPending ? t('translate.testing') : t('translate.test')}
         </Button>
       </div>
     </Card>

@@ -5,12 +5,14 @@ import { Button } from '@fluentui/react-components';
 import { AuthShell } from '../components/common/AuthShell';
 import { FormField } from '../components/common/FormField';
 import { useAuthStore } from '../stores/authStore';
+import { useLanguage } from '../i18n';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const next = searchParams.get('next') || '/';
   const { login } = useAuthStore();
+  const { t } = useLanguage();
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -24,7 +26,7 @@ export function LoginPage() {
       await login(username, password);
       navigate(next);
     } catch (err: any) {
-      setError(err.message || '登录失败');
+      setError(err.message || t('auth.loginFailed'));
     } finally {
       setLoading(false);
     }
@@ -32,18 +34,25 @@ export function LoginPage() {
 
   return (
     <AuthShell
-      title="登录"
+      title={t('auth.login')}
       footer={
         <>
-          还没有账户？<Link to="/register">注册</Link>
+          {t('auth.noAccount')}
+          <Link to="/register">{t('auth.register')}</Link>
         </>
       }
     >
       <form onSubmit={handleSubmit}>
-        <FormField id="username" label="用户名" value={username} onChange={(_, d) => setUsername(d.value)} required />
+        <FormField
+          id="username"
+          label={t('auth.username')}
+          value={username}
+          onChange={(_, d) => setUsername(d.value)}
+          required
+        />
         <FormField
           id="password"
-          label="密码"
+          label={t('auth.password')}
           type="password"
           value={password}
           onChange={(_, d) => setPassword(d.value)}
@@ -51,7 +60,7 @@ export function LoginPage() {
         />
         {error && <div style={{ color: 'red', marginBottom: '8px' }}>{error}</div>}
         <Button type="submit" appearance="primary" disabled={loading} style={{ width: '100%' }}>
-          {loading ? '登录中...' : '登录'}
+          {loading ? t('auth.loggingIn') : t('auth.login')}
         </Button>
       </form>
     </AuthShell>

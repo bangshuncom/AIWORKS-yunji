@@ -5,6 +5,7 @@
 import { useMemo, useState } from 'react';
 import { Button, Input, tokens } from '@fluentui/react-components';
 import { useStyles } from './shared';
+import { useLanguage } from '../../i18n';
 
 export interface PillOption {
   id: number;
@@ -17,8 +18,8 @@ export function PillPicker({
   selectedIds,
   onChange,
   searchPlaceholder,
-  emptyHint = '暂无可选项',
-  noMatchHint = '没有匹配的项',
+  emptyHint,
+  noMatchHint,
   topCount = 20,
 }: {
   options: PillOption[];
@@ -33,6 +34,7 @@ export function PillPicker({
   topCount?: number;
 }) {
   const styles = useStyles();
+  const { t } = useLanguage();
   const [search, setSearch] = useState('');
 
   // 已选的永远置顶：否则被搜索词过滤掉之后就再也点不掉了
@@ -56,7 +58,7 @@ export function PillPicker({
       <div className={styles.tagOptions}>
         {visible.length === 0 ? (
           <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-            {options.length === 0 ? emptyHint : noMatchHint}
+            {options.length === 0 ? (emptyHint ?? t('pill.empty')) : (noMatchHint ?? t('pill.noMatch'))}
           </span>
         ) : (
           visible.map((o) => {
@@ -67,7 +69,7 @@ export function PillPicker({
                 size="small"
                 appearance={on ? 'primary' : 'outline'}
                 onClick={() => toggle(o.id)}
-                title={on ? `已选中，点击取消（共 ${o.count ?? 0} 篇）` : `点击选中（共 ${o.count ?? 0} 篇）`}
+                title={on ? t('pill.selectedTip', { n: o.count ?? 0 }) : t('pill.selectTip', { n: o.count ?? 0 })}
               >
                 {o.label}
                 {o.count ? ` (${o.count})` : ''}

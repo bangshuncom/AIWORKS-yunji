@@ -17,15 +17,17 @@ import {
 import { CloudRegular } from '@fluentui/react-icons';
 import { settingsApi } from '../../lib/tauri';
 import { useStyles } from './styles';
+import { useLanguage } from '../../i18n';
 
 const PROXY_MODES = [
-  { value: 'system', label: '系统代理', hint: '自动读取 Windows 系统代理 / 环境变量（默认）' },
-  { value: 'none', label: '不使用代理', hint: '所有网络请求直连' },
-  { value: 'custom', label: '自定义代理', hint: '手动指定代理服务器地址' },
+  { value: 'system', labelKey: 'proxy.system', hintKey: 'proxy.systemHint' },
+  { value: 'none', labelKey: 'proxy.none', hintKey: 'proxy.noneHint' },
+  { value: 'custom', labelKey: 'proxy.custom', hintKey: 'proxy.customHint' },
 ];
 
 export function ProxyTab() {
   const styles = useStyles();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -56,14 +58,14 @@ export function ProxyTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       queryClient.invalidateQueries({ queryKey: ['proxy-status'] });
-      setMsg({ ok: true, text: '代理设置已保存并生效' });
+      setMsg({ ok: true, text: t('proxy.saved') });
     },
-    onError: (e: Error) => setMsg({ ok: false, text: e.message || '保存失败' }),
+    onError: (e: Error) => setMsg({ ok: false, text: e.message || t('edit.saveFailed') }),
   });
 
   const save = () => {
     if (mode === 'custom' && !customUrl.trim()) {
-      setMsg({ ok: false, text: '自定义模式需要填写代理地址' });
+      setMsg({ ok: false, text: t('proxy.needUrl') });
       return;
     }
     saveMut.mutate({ proxy_mode: mode, proxy_url: customUrl.trim() });
@@ -72,37 +74,35 @@ export function ProxyTab() {
   return (
     <Card className={styles.card}>
       <div className={styles.title}>
-        <CloudRegular /> 代理设置
+        <CloudRegular /> {t('proxy.title')}
       </div>
-      <p style={{ marginTop: 0, fontSize: '13px', color: tokens.colorNeutralForeground2 }}>
-        影响网页采集、封面/图集下载、编辑器粘贴图片本地化等应用内网络请求。保存后立即生效。
-      </p>
+      <p style={{ marginTop: 0, fontSize: '13px', color: tokens.colorNeutralForeground2 }}>{t('proxy.desc')}</p>
       <div className={styles.field}>
-        <Label>代理模式</Label>
+        <Label>{t('proxy.modeLabel')}</Label>
         <RadioGroup value={mode} onChange={(_, d) => setMode(d.value)}>
           {PROXY_MODES.map((m) => (
-            <Radio key={m.value} value={m.value} label={m.label} />
+            <Radio key={m.value} value={m.value} label={t(m.labelKey)} />
           ))}
         </RadioGroup>
         <span style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-          {PROXY_MODES.find((m) => m.value === mode)?.hint}
+          {t(PROXY_MODES.find((m) => m.value === mode)?.hintKey ?? '')}
         </span>
       </div>
       {mode === 'custom' && (
         <div className={styles.field}>
-          <Label htmlFor="proxy_url">代理地址</Label>
+          <Label htmlFor="proxy_url">{t('proxy.urlLabel')}</Label>
           <Input
             id="proxy_url"
             value={customUrl}
             onChange={(_, d) => setCustomUrl(d.value)}
-            placeholder="127.0.0.1:7890 或 http://host:port"
+            placeholder={t('proxy.urlPlaceholder')}
             style={{ maxWidth: '360px' }}
           />
         </div>
       )}
       {status && (
         <div className={styles.field}>
-          <Label>当前生效</Label>
+          <Label>{t('lang.effective')}</Label>
           <Badge
             appearance={status.effective === '直连（无代理）' ? 'outline' : 'tint'}
             color={status.effective === '直连（无代理）' ? undefined : 'brand'}
@@ -114,13 +114,13 @@ export function ProxyTab() {
       {msg && (
         <MessageBar intent={msg.ok ? 'success' : 'error'} className={styles.feedback}>
           <MessageBarBody>
-            <MessageBarTitle>{msg.ok ? '成功' : '失败'}</MessageBarTitle>
+            <MessageBarTitle>{msg.ok ? t('common.success') : t('common.fail')}</MessageBarTitle>
             {msg.text}
           </MessageBarBody>
         </MessageBar>
       )}
       <Button appearance="primary" onClick={save} disabled={saveMut.isPending}>
-        保存代理设置
+        {t('proxy.save')}
       </Button>
     </Card>
   );

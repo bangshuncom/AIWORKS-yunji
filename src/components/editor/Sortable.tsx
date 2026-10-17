@@ -7,10 +7,12 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { assetUrl } from '../../lib/tauri';
 import type { EditItem, EditImage } from './shared';
 import { useStyles } from './shared';
+import { useLanguage } from '../../i18n';
 
 // 可排序的附件项
 export function SortableItem({ item, children }: { item: EditItem; children: ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item._id });
+  const { t } = useLanguage();
   return (
     <div
       ref={setNodeRef}
@@ -25,7 +27,7 @@ export function SortableItem({ item, children }: { item: EditItem; children: Rea
       <button
         {...listeners}
         style={{ cursor: 'grab', border: 'none', background: 'transparent', padding: '4px' }}
-        title="拖动排序"
+        title={t('sortable.dragHint')}
       >
         <ReOrderDotsVerticalRegular />
       </button>
@@ -37,9 +39,10 @@ export function SortableItem({ item, children }: { item: EditItem; children: Rea
 export function SortableImage({ img, onDelete }: { img: EditImage; onDelete: () => void }) {
   const styles = useStyles();
   const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: String(img.id) });
+  const { t } = useLanguage();
   // 三种来源：本地待上传 / 远程待本地化 / 已落库
   const src = img.localPath ? convertFileSrc(img.localPath) : img.remoteUrl ? img.remoteUrl : assetUrl(img.file_path);
-  const badge = img.localPath ? '待保存' : img.remoteUrl ? '待本地化' : '';
+  const badge = img.localPath ? t('sortable.pendingSave') : img.remoteUrl ? t('sortable.pendingLocalize') : '';
   return (
     <div
       ref={setNodeRef}
@@ -54,7 +57,7 @@ export function SortableImage({ img, onDelete }: { img: EditImage; onDelete: () 
         src={src}
         className={styles.galleryImg}
         alt=""
-        title={img.localPath ? '保存时上传' : img.remoteUrl ? '保存时下载到本地' : ''}
+        title={img.localPath ? t('sortable.uploadOnSave') : img.remoteUrl ? t('sortable.downloadOnSave') : ''}
         referrerPolicy="no-referrer"
         {...listeners}
       />

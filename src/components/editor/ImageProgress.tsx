@@ -13,6 +13,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { formatBytes } from '../../lib/format';
+import { useLanguage } from '../../i18n';
 
 /** 后端 collector-progress 事件载荷 */
 export interface CollectorProgressEvent {
@@ -117,6 +118,7 @@ export function ImageProgressPanel({
   progress: Record<string, TaskProgress>;
 }) {
   const s = useStyles();
+  const { t } = useLanguage();
   return (
     <div className={s.panel}>
       <div
@@ -131,40 +133,41 @@ export function ImageProgressPanel({
           color: proxy === undefined ? tokens.colorNeutralForeground3 : undefined,
         }}
       >
-        {proxy === undefined && '正在建立连接…'}
+        {proxy === undefined && t('imageProgress.connecting')}
         {proxy === null && (
           <>
-            ⚠ 未检测到系统代理，当前为<b>直连</b>。浏览器能秒开而这里很慢，通常是 Clash 只开了浏览器代理/已关闭 ——请在
-            Clash 中打开「系统代理」后重试（TUN 模式可忽略此提示）
+            {t('imageProgress.noProxyPrefix')}
+            <b>{t('imageProgress.direct')}</b>
+            {t('imageProgress.noProxySuffix')}
           </>
         )}
         {proxy && (
           <>
-            网络出口：系统代理 <b>{proxy}</b>
+            {t('imageProgress.viaProxy')} <b>{proxy}</b>
           </>
         )}
       </div>
 
       {rows.map(({ key, label }) => {
-        const t = progress[key];
-        const pct = t?.size ? Math.min(100, Math.round((t.done / t.size) * 100)) : undefined;
+        const tp = progress[key];
+        const pct = tp?.size ? Math.min(100, Math.round((tp.done / tp.size) * 100)) : undefined;
         return (
           <div key={key} className={s.taskRow}>
             <div className={s.taskLine}>
               <span>{label}</span>
               <span style={{ color: tokens.colorNeutralForeground3 }}>
-                {!t
-                  ? '排队中…'
-                  : `${formatBytes(t.done, true)}${t.size ? ` / ${formatBytes(t.size, true)}` : ''}${
+                {!tp
+                  ? t('imageProgress.queued')
+                  : `${formatBytes(tp.done, true)}${tp.size ? ` / ${formatBytes(tp.size, true)}` : ''}${
                       pct !== undefined ? ` · ${pct}%` : ''
-                    } · ${formatBytes(t.speed, true)}/s${t.round > 0 ? ` · 续传第 ${t.round + 1} 次` : ''}`}
+                    } · ${formatBytes(tp.speed, true)}/s${tp.round > 0 ? t('imageProgress.resumeRound', { n: tp.round + 1 }) : ''}`}
               </span>
             </div>
             <div className={s.barTrack}>
               <div
                 className={s.barFill}
                 style={{
-                  width: pct !== undefined ? `${pct}%` : t ? '100%' : '0%',
+                  width: pct !== undefined ? `${pct}%` : tp ? '100%' : '0%',
                   opacity: pct === undefined ? 0.35 : 1,
                 }}
               />
@@ -172,7 +175,7 @@ export function ImageProgressPanel({
           </div>
         );
       })}
-      <span className={s.hint}>单张图片 30 秒无数据才会超时并重试，慢而不断会持续下载，请勿关闭窗口</span>
+      <span className={s.hint}>{t('imageProgress.timeoutHint')}</span>
     </div>
   );
 }
@@ -189,12 +192,13 @@ export function SaveProgressDialog({
   proxy: string | null | undefined;
   progress: Record<string, TaskProgress>;
 }) {
+  const { t } = useLanguage();
   if (!open) return null;
   return (
     <Dialog open modalType="alert">
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>正在把远程图片本地化…</DialogTitle>
+          <DialogTitle>{t('imageProgress.localizing')}</DialogTitle>
           <DialogContent>
             <ImageProgressPanel proxy={proxy} rows={rows} progress={progress} />
           </DialogContent>

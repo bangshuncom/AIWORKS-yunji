@@ -6,6 +6,7 @@ import { AppsListRegular } from '@fluentui/react-icons';
 import { settingsApi } from '../../lib/tauri';
 import { clampPageSize, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_PAGE_SIZE } from '../../lib/listSettings';
 import { useStyles } from './styles';
+import { useLanguage } from '../../i18n';
 import { useComposingInput } from '../../hooks/useComposingInput';
 
 /** 每页条数只放行数字；组词期间不改写内容，见 useComposingInput */
@@ -13,6 +14,7 @@ const onlyDigits = (s: string) => s.replace(/[^0-9]/g, '');
 
 export function ListTab() {
   const styles = useStyles();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const composing = useComposingInput();
 
@@ -32,7 +34,7 @@ export function ListTab() {
     },
   });
 
-  if (isLoading) return <Spinner label="加载中..." />;
+  if (isLoading) return <Spinner label={t('common.loading')} />;
 
   const savedPageSize = clampPageSize(settings?.list_page_size);
   const pageSizeInput = draft ?? String(savedPageSize);
@@ -58,17 +60,17 @@ export function ListTab() {
     <div className={styles.container}>
       <Card className={styles.card}>
         <div className={styles.title}>
-          <AppsListRegular /> 文章列表
+          <AppsListRegular /> {t('settings.tab.list')}
         </div>
 
         <div className={styles.field}>
-          <Label id="list_page_size_label">每页显示条数</Label>
+          <Label id="list_page_size_label">{t('list.pageSize')}</Label>
           <Input
             aria-labelledby="list_page_size_label"
             value={pageSizeInput}
             inputMode="numeric"
             placeholder={String(DEFAULT_PAGE_SIZE)}
-            contentAfter="条"
+            contentAfter={t('list.pageSizeUnit')}
             style={{ maxWidth: '140px' }}
             onChange={(_, d) => setDraft(composing.transform(d.value, onlyDigits))}
             onCompositionStart={composing.onCompositionStart}
@@ -83,23 +85,20 @@ export function ListTab() {
             }}
           />
           <div style={{ fontSize: '12px', color: tokens.colorNeutralForeground3, marginTop: '4px' }}>
-            可填 {MIN_PAGE_SIZE}–{MAX_PAGE_SIZE} 之间的整数，回车或点击别处保存。首页文章列表与回收站同时生效。
+            {t('list.pageSizeHint', { min: MIN_PAGE_SIZE, max: MAX_PAGE_SIZE })}
           </div>
         </div>
 
         <div className={styles.field}>
           <Switch
-            label="瀑布流使用无限滚动加载"
+            label={t('list.infiniteScroll')}
             checked={infinite}
             onChange={(_, d) => updateMut.mutate({ list_infinite_scroll: d.checked ? '1' : '0' })}
           />
-          <div style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>
-            仅对瀑布流视图生效：开启后滚动到底部自动加载下一页，关闭则瀑布流也改用底部分页控件。
-            竖向卡片、横向卡片、表格列表这三种视图始终使用分页，不受此开关影响。
-          </div>
+          <div style={{ fontSize: '12px', color: tokens.colorNeutralForeground3 }}>{t('list.infiniteHint')}</div>
         </div>
 
-        {updateMut.isPending && <Spinner size="tiny" label="保存中…" />}
+        {updateMut.isPending && <Spinner size="tiny" label={t('list.saving')} />}
       </Card>
     </div>
   );

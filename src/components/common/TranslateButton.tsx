@@ -8,6 +8,7 @@ import { Button, Dropdown, Option, Spinner, tokens } from '@fluentui/react-compo
 import { TranslateRegular, ArrowUndoRegular } from '@fluentui/react-icons';
 import { translateApi } from '../../lib/tauri';
 import { errorText } from '../../lib/errors';
+import { useLanguage } from '../../i18n';
 
 interface TranslateButtonProps {
   /** 待翻译的当前内容 */
@@ -33,6 +34,7 @@ const LANG_FALLBACK = [{ code: 'zh', name: '简体中文' }];
 
 export function TranslateButton({ value, onChange }: TranslateButtonProps) {
   const [lang, setLang] = useState<string | null>(null);
+  const { t } = useLanguage();
   const [busy, setBusy] = useState(false);
   /** 非 null 表示当前内容已是译文，点「还原」回到这个原文 */
   const [original, setOriginal] = useState<string | null>(null);
@@ -65,9 +67,9 @@ export function TranslateButton({ value, onChange }: TranslateButtonProps) {
       setOriginal(value);
       onChange(res.text);
       if (res.cancelled) {
-        setErr('翻译已取消，已翻译的部分已保留');
+        setErr(t('translateBtn.cancelled'));
       } else if (res.failed_blocks > 0) {
-        setErr(res.error ?? `有 ${res.failed_blocks} 段未能翻译，已保留原文`);
+        setErr(res.error ?? t('translateBtn.partialFailed', { n: res.failed_blocks }));
       }
     } catch (e) {
       setErr(errorText(e));
@@ -103,10 +105,12 @@ export function TranslateButton({ value, onChange }: TranslateButtonProps) {
         {busy ? (
           <>
             <Button size={CONTROL_SIZE} icon={<Spinner size="tiny" />} disabled>
-              {progress ? `翻译中 ${progress.done}/${progress.total}` : '翻译中…'}
+              {progress
+                ? t('translateBtn.progress', { done: progress.done, total: progress.total })
+                : t('translateBtn.translating')}
             </Button>
             <Button size={CONTROL_SIZE} appearance="subtle" onClick={cancel} disabled={cancelling}>
-              {cancelling ? '取消中…' : '取消'}
+              {cancelling ? t('translateBtn.cancelling') : t('common.cancel')}
             </Button>
           </>
         ) : original !== null ? (
@@ -115,9 +119,9 @@ export function TranslateButton({ value, onChange }: TranslateButtonProps) {
             appearance="subtle"
             icon={<ArrowUndoRegular />}
             onClick={restore}
-            title="回到翻译前的原文"
+            title={t('translateBtn.restoreTitle')}
           >
-            还原
+            {t('translateBtn.restore')}
           </Button>
         ) : (
           <>
@@ -126,9 +130,9 @@ export function TranslateButton({ value, onChange }: TranslateButtonProps) {
               icon={<TranslateRegular />}
               onClick={run}
               disabled={!value.trim()}
-              title={notConfigured ? '管理员尚未配置翻译服务' : '翻译成所选语言'}
+              title={notConfigured ? t('translateBtn.notConfigured') : t('translateBtn.runTitle')}
             >
-              翻译
+              {t('translateBtn.translate')}
             </Button>
             <Dropdown
               size={CONTROL_SIZE}
@@ -136,8 +140,8 @@ export function TranslateButton({ value, onChange }: TranslateButtonProps) {
               value={langName}
               selectedOptions={[targetLang]}
               onOptionSelect={(_, d) => setLang(d.optionValue ?? 'zh')}
-              placeholder="语言"
-              title={`目标语言：${langName}`}
+              placeholder={t('translateBtn.langPlaceholder')}
+              title={t('translateBtn.targetLang', { lang: langName })}
               // 按钮本身窄一点省空间，弹出列表给足宽度，避免长语言名被裁切
               style={{ minWidth: '96px', maxWidth: '116px' }}
               listbox={{ style: { minWidth: '150px' } }}

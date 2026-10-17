@@ -5,6 +5,7 @@ mod collector;
 mod commands;
 mod db;
 mod error;
+mod i18n;
 mod magnet;
 mod state;
 mod storage;
@@ -25,6 +26,28 @@ fn show_main_window(app: &tauri::AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+/// 系统托盘固定 ID（切换语言后据此重建菜单文案）
+const TRAY_ID: &str = "main";
+
+/// 按当前语言构建托盘右键菜单。文案取自 lang 目录对应语言包，缺词回退简体中文。
+fn build_tray_menu(app: &tauri::AppHandle, lang_dir: &std::path::Path, lang: &str) -> tauri::Result<Menu<tauri::Wry>> {
+    let show_item = MenuItem::with_id(
+        app,
+        "tray_show",
+        i18n::tr(lang_dir, lang, "tray.show"),
+        true,
+        None::<&str>,
+    )?;
+    let quit_item = MenuItem::with_id(
+        app,
+        "tray_quit",
+        i18n::tr(lang_dir, lang, "tray.quit"),
+        true,
+        None::<&str>,
+    )?;
+    Menu::with_items(app, &[&show_item, &quit_item])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -52,6 +75,9 @@ pub fn run() {
 
             std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
 
+            // 语言目录：优先 exe 同级 lang/（便携版用户一眼能看到），不可写时退到 data/lang/
+            let lang_dir = i18n::seed::resolve_lang_dir(&exe_dir, &data_dir);
+
             // 初始化数据库
             let db_path = data_dir.join("app.db");
             let pool = tauri::async_runtime::block_on(async {
@@ -72,6 +98,14 @@ pub fn run() {
             tauri::async_runtime::block_on(async {
                 if let Err(e) = translate::migrate_legacy_settings_to_provider(&pool).await {
                     eprintln!("翻译设置迁移失败（不影响启动）：{e}");
+                }
+            });
+
+            // 首次启动释放默认语言文件（简/繁/英），已存在的文件绝不覆盖；
+            // 失败只记日志，程序用内置简体中文兜底，不阻断启动。
+            tauri::async_runtime::block_on(async {
+                if let Err(e) = i18n::seed::release(&lang_dir, &pool).await {
+                    eprintln!("释放语言文件失败（不影响启动，将使用内置简体中文兜底）：{e}");
                 }
             });
 
@@ -96,8 +130,8 @@ pub fn run() {
                 Ok::<(), String>(())
             })?;
 
-            // 创建 AppState
-            let app_state = AppState::new(pool, storage, data_dir);
+            // 创建 AppState（pool / lang_dir 后续建托盘还要用，这里 clone 保留所有权）
+            let app_state = AppState::new(pool.clone(), storage, data_dir, lang_dir.clone());
             app.manage(app_state);
 
             // 启动时应用已保存的代理设置（system/none/custom）
@@ -107,12 +141,19 @@ pub fn run() {
             });
 
             // 系统托盘（左键单击显示窗口，右键菜单：显示 / 退出）
-            let show_item = MenuItem::with_id(app, "tray_show", "显示主窗口", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "tray_quit", "退出", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&show_item, &quit_item])?;
-            TrayIconBuilder::new()
+            // 文案按全局默认语言（ui_language）渲染，切换语言后由 set_ui_language 重建
+            let tray_lang = tauri::async_runtime::block_on(async {
+                db::repository::settings::get(&pool, "ui_language")
+                    .await
+                    .ok()
+                    .flatten()
+                    .filter(|v| !v.is_empty())
+                    .unwrap_or_else(|| "zh-CN".to_string())
+            });
+            let tray_menu = build_tray_menu(app.handle(), &lang_dir, &tray_lang)?;
+            TrayIconBuilder::with_id(TRAY_ID)
                 .icon(app.default_window_icon().ok_or("缺少应用图标")?.clone())
-                .tooltip("云记")
+                .tooltip(i18n::tr(&lang_dir, &tray_lang, "app.name"))
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -262,6 +303,12 @@ pub fn run() {
             collector::image::download_remote_image,
             commands::settings::get_proxy_status,
             commands::settings::open_external_url,
+            // i18n（语言包与切换）
+            commands::i18n::list_languages,
+            commands::i18n::get_language,
+            commands::i18n::get_lang_dir,
+            commands::i18n::set_ui_language,
+            commands::i18n::open_lang_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

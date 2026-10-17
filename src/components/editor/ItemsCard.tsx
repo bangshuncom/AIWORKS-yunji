@@ -6,6 +6,7 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { SortableItem } from './Sortable';
 import { ITEM_TYPES, useStyles, CARD_STYLE, CARD_HEAD_STYLE, type EditItem } from './shared';
 import type { CreateItem } from '../../types/models';
+import { useLanguage } from '../../i18n';
 
 export function ItemsCard({
   items,
@@ -27,21 +28,22 @@ export function ItemsCard({
   onDragEnd: (e: DragEndEvent) => void;
 }) {
   const styles = useStyles();
+  const { t } = useLanguage();
 
   return (
     <Card style={CARD_STYLE}>
       <div style={CARD_HEAD_STYLE}>
-        <Label>附件项（支持多个，可拖拽排序）</Label>
+        <Label>{t('itemsCard.title')}</Label>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          {ITEM_TYPES.map((t) => (
+          {ITEM_TYPES.map((ty) => (
             <Button
-              key={t.value}
+              key={ty.value}
               appearance="outline"
               size="small"
               icon={<AddCircleRegular />}
-              onClick={() => onAdd(t.value as CreateItem['type'])}
+              onClick={() => onAdd(ty.value as CreateItem['type'])}
             >
-              {t.label}
+              {t(ty.labelKey)}
             </Button>
           ))}
         </div>
@@ -49,7 +51,7 @@ export function ItemsCard({
 
       {items.length === 0 ? (
         <div style={{ padding: '16px', textAlign: 'center', color: tokens.colorNeutralForeground3 }}>
-          暂无附件，点击上方按钮添加链接 / 磁力种子 / 文件等
+          {t('itemsCard.empty')}
         </div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
@@ -60,7 +62,7 @@ export function ItemsCard({
                   <div className={styles.itemBlock}>
                     <div className={styles.itemHeader}>
                       <Badge appearance="outline">
-                        {ITEM_TYPES.find((t) => t.value === it.type)?.label ?? it.type}
+                        {t(ITEM_TYPES.find((x) => x.value === it.type)?.labelKey ?? it.type)}
                       </Badge>
                       <Button
                         appearance="subtle"
@@ -70,17 +72,17 @@ export function ItemsCard({
                       />
                     </div>
                     <div className={styles.field}>
-                      <Label>描述</Label>
+                      <Label>{t('itemsCard.description')}</Label>
                       <Input
                         value={it.description}
                         onChange={(_, d) => onUpdate(it._id, { description: d.value })}
-                        placeholder="可选描述"
+                        placeholder={t('itemsCard.descriptionPlaceholder')}
                       />
                     </div>
                     {it.type === 'magnet_torrent' ? (
                       <>
                         <div className={styles.field}>
-                          <Label>磁力链接</Label>
+                          <Label>{t('itemsCard.magnetLink')}</Label>
                           <Input
                             value={it.content}
                             onChange={(_, d) => onUpdate(it._id, { content: d.value })}
@@ -94,16 +96,16 @@ export function ItemsCard({
                             icon={<ArrowUploadRegular />}
                             onClick={() => onUploadTorrent(it._id)}
                           >
-                            上传种子文件
+                            {t('itemsCard.uploadTorrent')}
                           </Button>
                           {it.file_name && (
                             <>
                               <Badge
                                 appearance={it.localFilePath ? 'tint' : 'outline'}
-                                title={it.localFilePath ? '保存后上传' : undefined}
+                                title={it.localFilePath ? t('itemsCard.uploadAfterSave') : undefined}
                               >
                                 {it.file_name}
-                                {it.localFilePath ? ' · 待保存' : ''}
+                                {it.localFilePath ? t('itemsCard.pendingSave') : ''}
                               </Badge>
                               <Button
                                 size="small"
@@ -125,7 +127,7 @@ export function ItemsCard({
                           icon={<ArrowUploadRegular />}
                           onClick={() => onUploadFile(it._id)}
                         >
-                          上传文件
+                          {t('itemsCard.uploadFile')}
                         </Button>
                         {it.file_name && (
                           <>
@@ -141,7 +143,7 @@ export function ItemsCard({
                       </div>
                     ) : (
                       <div className={styles.field}>
-                        <Label>链接</Label>
+                        <Label>{t('itemsCard.link')}</Label>
                         <Input
                           value={it.content}
                           onChange={(_, d) => onUpdate(it._id, { content: d.value })}

@@ -5,10 +5,12 @@ import { assetUrl } from '../../lib/tauri';
 import { formatTime, relativeTime } from '../../lib/format';
 import type { Resource } from '../../types/models';
 import { useStyles } from './shared';
+import { useLanguage } from '../../i18n';
 
 export function ResourceHeader({ resource }: { resource: Resource }) {
   const styles = useStyles();
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   return (
     <div className={styles.header}>
@@ -22,7 +24,9 @@ export function ResourceHeader({ resource }: { resource: Resource }) {
             <button
               type="button"
               onClick={() => navigate(`/?author=${resource.author!.id}`)}
-              title={`查看 ${resource.author.nickname || resource.author.username} 的全部文章`}
+              title={t('resourceHeader.viewAllArticles', {
+                name: resource.author.nickname || resource.author.username,
+              })}
               className={styles.authorChip}
             >
               <Avatar
@@ -33,29 +37,33 @@ export function ResourceHeader({ resource }: { resource: Resource }) {
               {resource.author.nickname || resource.author.username}
             </button>
           )}
-          <span title={formatTime(resource.created_at)}>创建于 {relativeTime(resource.created_at)}</span>
-          <span title={formatTime(resource.updated_at)}>更新于 {relativeTime(resource.updated_at)}</span>
+          <span title={formatTime(resource.created_at)}>
+            {t('resourceHeader.createdAt')} {relativeTime(resource.created_at, t)}
+          </span>
+          <span title={formatTime(resource.updated_at)}>
+            {t('resourceHeader.updatedAt')} {relativeTime(resource.updated_at, t)}
+          </span>
           {resource.read_level === 0 ? (
             <Badge color="success" appearance="outline">
-              公开
+              {t('collections.public')}
             </Badge>
           ) : (
             <Badge color="warning" appearance="outline">
-              需权限 {resource.read_level}
+              {t('resourceHeader.needLevel', { level: resource.read_level })}
             </Badge>
           )}
         </div>
         {resource.tags && resource.tags.length > 0 && (
           <div className={styles.tags} style={{ marginTop: '10px' }}>
-            {resource.tags.map((t) => (
+            {resource.tags.map((tag) => (
               <Badge
-                key={t.id}
+                key={tag.id}
                 appearance="filled"
                 color="informative"
                 style={{ cursor: 'pointer' }}
-                onClick={() => navigate(`/?tag=${t.id}`)}
+                onClick={() => navigate(`/?tag=${tag.id}`)}
               >
-                {t.name}
+                {tag.name}
               </Badge>
             ))}
           </div>

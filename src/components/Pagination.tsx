@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Button, Input, tokens } from '@fluentui/react-components';
 import { ChevronLeftRegular, ChevronRightRegular } from '@fluentui/react-icons';
 import { useComposingInput } from '../hooks/useComposingInput';
+import { useLanguage } from '../i18n';
 
 /** 跳页框只放行数字；组词期间不改写内容，见 useComposingInput */
 const onlyDigits = (s: string) => s.replace(/[^\d]/g, '');
@@ -17,6 +18,7 @@ export interface PaginationProps {
 export function Pagination({ page, totalPages, total, onChange }: PaginationProps) {
   const [jump, setJump] = useState(String(page));
   const composing = useComposingInput();
+  const { t } = useLanguage();
 
   // 外部翻页后同步输入框
   useEffect(() => {
@@ -52,10 +54,11 @@ export function Pagination({ page, totalPages, total, onChange }: PaginationProp
         disabled={page <= 1}
         onClick={() => onChange(page - 1)}
       >
-        上一页
+        {t('pagination.prev')}
       </Button>
       <span style={{ color: tokens.colorNeutralForeground2, fontSize: '13px' }}>
-        第 {page} / {totalPages} 页{total != null && ` · 共 ${total} 项`}
+        {t('pagination.pageInfo', { page, totalPages })}
+        {total != null && t('pagination.totalItems', { total })}
       </span>
       <Button
         appearance="outline"
@@ -65,10 +68,10 @@ export function Pagination({ page, totalPages, total, onChange }: PaginationProp
         disabled={page >= totalPages}
         onClick={() => onChange(page + 1)}
       >
-        下一页
+        {t('pagination.next')}
       </Button>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginLeft: '4px' }}>
-        <span style={{ color: tokens.colorNeutralForeground3, fontSize: '13px' }}>跳至</span>
+        <span style={{ color: tokens.colorNeutralForeground3, fontSize: '13px' }}>{t('pagination.jumpTo')}</span>
         <Input
           size="small"
           style={{ width: '64px' }}
@@ -84,7 +87,7 @@ export function Pagination({ page, totalPages, total, onChange }: PaginationProp
           }}
           onBlur={doJump}
         />
-        <span style={{ color: tokens.colorNeutralForeground3, fontSize: '13px' }}>页</span>
+        <span style={{ color: tokens.colorNeutralForeground3, fontSize: '13px' }}>{t('pagination.pageUnit')}</span>
       </span>
     </div>
   );

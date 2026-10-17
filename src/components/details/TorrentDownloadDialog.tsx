@@ -13,8 +13,10 @@ import { FolderRegular, OpenRegular } from '@fluentui/react-icons';
 import { torrentApi } from '../../lib/tauri';
 import { notifyError } from '../../lib/dialog';
 import type { MtGroup } from './shared';
+import { useLanguage } from '../../i18n';
 
 export function TorrentDownloadDialog({ target, onClose }: { target: MtGroup | null; onClose: () => void }) {
+  const { t } = useLanguage();
   return (
     <Dialog
       open={target !== null}
@@ -24,13 +26,13 @@ export function TorrentDownloadDialog({ target, onClose }: { target: MtGroup | n
     >
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>下载文件</DialogTitle>
+          <DialogTitle>{t('torrentDl.title')}</DialogTitle>
           <DialogContent>
-            <p style={{ margin: 0 }}>{target?.torrentFileName || '下载文件'}</p>
+            <p style={{ margin: 0 }}>{target?.torrentFileName || t('torrentDl.title')}</p>
           </DialogContent>
           <DialogActions>
             <DialogTrigger>
-              <Button appearance="secondary">取消</Button>
+              <Button appearance="secondary">{t('common.cancel')}</Button>
             </DialogTrigger>
             <Button
               icon={<FolderRegular />}
@@ -41,11 +43,11 @@ export function TorrentDownloadDialog({ target, onClose }: { target: MtGroup | n
                   await torrentApi.revealFile(target.torrentPath);
                   onClose();
                 } catch (e: any) {
-                  await notifyError(e.message || '定位失败');
+                  await notifyError(e.message || t('torrentDl.locateFailed'));
                 }
               }}
             >
-              定位到文件
+              {t('torrentDl.locate')}
             </Button>
             <Button
               icon={<OpenRegular />}
@@ -56,11 +58,11 @@ export function TorrentDownloadDialog({ target, onClose }: { target: MtGroup | n
                   await torrentApi.openFile(target.torrentPath);
                   onClose();
                 } catch (e: any) {
-                  await notifyError(e.message || '打开失败');
+                  await notifyError(e.message || t('torrentDl.openFailed'));
                 }
               }}
             >
-              用默认软件打开
+              {t('torrentDl.openWith')}
             </Button>
           </DialogActions>
         </DialogBody>

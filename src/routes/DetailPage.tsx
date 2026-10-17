@@ -18,6 +18,7 @@ import { isForbidden, errorText } from '../lib/errors';
 import { invalidateArticleData } from '../lib/invalidate';
 import { PasswordDialog } from '../components/common/PasswordDialog';
 import { usePerms } from '../hooks/usePerms';
+import { useLanguage } from '../i18n';
 import type { Image, ResourceItem } from '../types/models';
 import { MarkdownView } from '../components/MarkdownView';
 import { ImageLightbox } from '../components/ImageLightbox';
@@ -33,6 +34,7 @@ export function DetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { can: canFeature } = usePerms();
+  const { t } = useLanguage();
   const canArticle = canFeature('article');
   const [previewIndex, setPreviewIndex] = useState<number>(-1);
   // 下载种子/附件弹窗：当前操作的条目
@@ -119,7 +121,7 @@ export function DetailPage() {
   }, [ridNum, resource]);
 
   if (isLoading) {
-    return <Spinner label="加载中..." />;
+    return <Spinner label={t('common.loading')} />;
   }
 
   if (!resource) {
@@ -128,7 +130,7 @@ export function DetailPage() {
       return (
         <div className={styles.container}>
           <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => navigate('/')}>
-            返回
+            {t('detail.back')}
           </Button>
           <div
             style={{
@@ -144,19 +146,17 @@ export function DetailPage() {
             }}
           >
             <LockClosedRegular style={{ fontSize: '32px', color: tokens.colorNeutralForeground3 }} />
-            <div style={{ fontSize: '16px', fontWeight: 600 }}>此内容受保护</div>
+            <div style={{ fontSize: '16px', fontWeight: 600 }}>{t('detail.protected')}</div>
             <div style={{ fontSize: '13px', color: tokens.colorNeutralForeground3 }}>
-              {pwdPassed
-                ? '密码已通过，但你当前的权限等级不足，无法查看此内容。'
-                : '该内容设有访问密码，或需要更高的权限等级才能查看。'}
+              {pwdPassed ? t('detail.pwdPassedInsufficient') : t('detail.pwdHint')}
             </div>
             <Button appearance="primary" icon={<KeyRegular />} onClick={() => setPwdOpen(true)}>
-              输入访问密码
+              {t('detail.inputPassword')}
             </Button>
           </div>
           <PasswordDialog
             open={pwdOpen}
-            title="输入访问密码"
+            title={t('detail.inputPassword')}
             onSubmit={(pwd) => resourceApi.checkAccess(ridNum, pwd)}
             onUnlocked={() => {
               setPwdPassed(true);
@@ -169,7 +169,7 @@ export function DetailPage() {
     }
     return (
       <MessageBar intent="warning">
-        <MessageBarBody>{errorText(error) || '资源不存在或已被删除'}</MessageBarBody>
+        <MessageBarBody>{errorText(error) || t('detail.notFound')}</MessageBarBody>
       </MessageBar>
     );
   }
@@ -179,29 +179,29 @@ export function DetailPage() {
       {/* 顶部工具栏：返回居左，编辑/删除居右 */}
       <div className={styles.toolbar}>
         <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => navigate('/')}>
-          返回
+          {t('detail.back')}
         </Button>
         {canArticle && (
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button appearance="outline" icon={<EditRegular />} onClick={() => navigate(`/edit/${resource.id}`)}>
-              编辑
+              {t('list.edit')}
             </Button>
             <Button
               appearance="outline"
               icon={<DeleteRegular />}
               onClick={async () => {
-                if (!(await confirmDanger(`将「${resource.title}」移入回收站？`))) return;
+                if (!(await confirmDanger(t('list.moveToTrash', { title: resource.title })))) return;
                 try {
                   await resourceApi.delete(resource.id);
                   // 分类导航的计数等聚合数据都依赖本篇，先失效再跳走（导航栏常驻，不会自己重挂载）
                   invalidateArticleData(queryClient);
                   navigate('/');
                 } catch (e) {
-                  await notifyError(errorText(e) || '删除失败');
+                  await notifyError(errorText(e) || t('detail.deleteFailed'));
                 }
               }}
             >
-              删除
+              {t('list.delete')}
             </Button>
           </div>
         )}
@@ -216,7 +216,7 @@ export function DetailPage() {
       {galleryImages.length > 0 && (
         <div className={styles.itemBlock}>
           <div className={styles.itemHeader}>
-            <DocumentRegular /> 图集 ({galleryImages.length})
+            <DocumentRegular /> {t('detail.gallery', { count: galleryImages.length })}
           </div>
           <div className={styles.gallery}>
             {galleryImages.map((img, idx) => (
@@ -224,7 +224,7 @@ export function DetailPage() {
                 key={img.id}
                 className={styles.galleryImg}
                 src={assetUrl(img.file_path)}
-                alt={`图 ${idx + 1}`}
+                alt={t('detail.imageAlt', { n: idx + 1 })}
                 loading="lazy"
                 onClick={() => setPreviewIndex(idx)}
               />

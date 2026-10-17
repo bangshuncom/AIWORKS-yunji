@@ -34,6 +34,7 @@ import {
 import type { CreateItem, Resource, Tag, Image, Collection, Category, AuthorInfo } from '../types/models';
 import { usePerms } from '../hooks/usePerms';
 import { useAuthStore } from '../stores/authStore';
+import { useLanguage } from '../i18n';
 import { CategoryTreeSelect } from '../components/CategoryTreeSelect';
 import { CollectDialog } from '../components/CollectDialog';
 import type { CollectApplyPayload } from '../components/CollectDialog';
@@ -78,7 +79,11 @@ export function EditPage() {
   const [thumbnailPath, setThumbnailPath] = useState('');
   // 管理员马甲：可选其他用户身份发布
   const isAdmin = usePerms().isAdmin;
+  const { t } = useLanguage();
   const currentUserId = useAuthStore((s) => s.user?.id);
+  // 阅读权限等级文案：0 = 公开；其余 = 需权限 N 及以上
+  const readLevelText = (lv: number) =>
+    lv === 0 ? t('edit.readLevel.public') : t('edit.readLevel.need', { level: lv });
   const [authorId, setAuthorId] = useState<number | null>(null);
   const { data: authors } = useQuery<AuthorInfo[]>({
     queryKey: ['authors'],
@@ -181,7 +186,7 @@ export function EditPage() {
   const pickFile = async (extensions?: string[]) => {
     const selected = await openDialog({
       multiple: false,
-      filters: extensions ? [{ name: '文件', extensions }] : undefined,
+      filters: extensions ? [{ name: t('edit.filterFile'), extensions }] : undefined,
     });
     return typeof selected === 'string' ? selected : null;
   };
@@ -189,7 +194,7 @@ export function EditPage() {
   const pickImages = async () => {
     const selected = await openDialog({
       multiple: true,
-      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }],
+      filters: [{ name: t('edit.filterImage'), extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }],
     });
     if (!selected) return [];
     return Array.isArray(selected) ? selected : [selected];
@@ -220,7 +225,7 @@ export function EditPage() {
       }
       setThumbnailPath('');
     } catch (e: any) {
-      setError(e.message || '清除失败');
+      setError(e.message || t('edit.clearFailed'));
     }
   };
 
@@ -247,7 +252,7 @@ export function EditPage() {
       await imageApi.deleteResourceImage(Number(img.id));
       setGallery((g) => g.filter((im) => im.id !== img.id));
     } catch (e: any) {
-      setError(e.message || '删除失败');
+      setError(e.message || t('detail.deleteFailed'));
     }
   };
 
@@ -255,7 +260,10 @@ export function EditPage() {
   const uploadContentAsset = async (kind: 'image' | 'file') => {
     const selected = await openDialog({
       multiple: false,
-      filters: kind === 'image' ? [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }] : undefined,
+      filters:
+        kind === 'image'
+          ? [{ name: t('edit.filterImage'), extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }]
+          : undefined,
     });
     if (typeof selected !== 'string') return null;
     const name = selected.split(/[\\/]/).pop() || 'file';
@@ -342,7 +350,7 @@ export function EditPage() {
       if (it.type === 'magnet_torrent' && it.content) {
         const v = it.content.trim();
         if (v && !/^magnet:\?xt=urn:btih:([a-fA-F0-9]{40}|[A-Za-z2-7]{32})/.test(v)) {
-          setError('磁力链接格式错误：应以 magnet:?xt=urn:btih: 开头');
+          setError(t('edit.magnetFormatError'));
           return null;
         }
       }
@@ -406,7 +414,7 @@ export function EditPage() {
     // 页面没提取到标题、表单也空时，保存必然失败（保存按钮也依赖标题），提前给出指引
     const nextTitle = p.title.trim() || title.trim();
     if (!nextTitle) {
-      throw new Error('未能从该页面提取到标题：请先在「标题」一栏填写，再点确认回填');
+      throw new Error(t('edit.collectNoTitle'));
     }
     setTitle(nextTitle);
     // 游戏简介写入文章正文（已有正文时不覆盖）
@@ -422,7 +430,7 @@ export function EditPage() {
             _id: genId(),
             type: 'link',
             content: p.sourceUrl,
-            description: '来源链接',
+            description: t('edit.sourceLink'),
             file_path: '',
             file_name: '',
             _isNew: true,
@@ -535,8 +543,8 @@ export function EditPage() {
       const problems: string[] = [];
       const remoteGallery = gallery.filter((im) => im.remoteUrl);
       const rows: ProgressRow[] = [
-        ...(pendingRemoteThumb ? [{ key: 'cover-0', label: '封面图' }] : []),
-        ...remoteGallery.map((_, i) => ({ key: `image-${i}`, label: `图集 ${i + 1}` })),
+        ...(pendingRemoteThumb ? [{ key: 'cover-0', label: t('edit.coverImage') }] : []),
+        ...remoteGallery.map((_, i) => ({ key: `image-${i}`, label: t('edit.galleryN', { n: i + 1 }) })),
       ];
       if (rows.length > 0) {
         setSavingRows(rows);
@@ -555,7 +563,7 @@ export function EditPage() {
                 setThumbnailPath(saved);
                 setPendingRemoteThumb(null);
               } catch (e) {
-                problems.push(`封面下载失败：${errorText(e) || '未知错误'}`);
+                problems.push(t('edit.coverDownloadFailed', { error: errorText(e) || t('common.unknownError') }));
               }
             }
             if (remoteGallery.length > 0) {
@@ -570,9 +578,9 @@ export function EditPage() {
                   const hit = remoteGallery.find((g) => g.remoteUrl === im.source_url);
                   if (hit) resolved.set(String(hit.id), { realId: im.id, filePath: im.file_path });
                 }
-                for (const f of res.failed) problems.push(`${f.url} 下载失败：${f.error}`);
+                for (const f of res.failed) problems.push(t('edit.downloadFailed', { url: f.url, error: f.error }));
               } catch (e) {
-                problems.push(`图集下载失败：${errorText(e) || '未知错误'}`);
+                problems.push(t('edit.galleryDownloadFailed', { error: errorText(e) || t('common.unknownError') }));
               }
             }
           });
@@ -647,12 +655,12 @@ export function EditPage() {
       queryClient.invalidateQueries({ queryKey: ['tags'] });
       // 有图片没能本地化时留在编辑页：失败项仍是「待本地化」，再点一次保存即可重试
       if (problems.length > 0) {
-        setError(`已保存，但图片未能全部本地化：${problems.join('；')}`);
+        setError(t('edit.savedButImagesFailed', { problems: problems.join('；') }));
         return;
       }
       navigate(`/detail/${savedId}`);
     },
-    onError: (e: Error) => setError(e.message || '保存失败'),
+    onError: (e: Error) => setError(e.message || t('edit.saveFailed')),
   });
 
   // 取数失败（如无阅读权限）时不要一直转圈
@@ -660,25 +668,25 @@ export function EditPage() {
     if (loadError) {
       return (
         <MessageBar intent="error">
-          <MessageBarBody>{errorText(loadError) || '加载文章失败'}</MessageBarBody>
+          <MessageBarBody>{errorText(loadError) || t('edit.loadArticleFailed')}</MessageBarBody>
         </MessageBar>
       );
     }
-    return <Spinner label="加载中..." />;
+    return <Spinner label={t('common.loading')} />;
   }
 
   return (
     <div className={styles.container}>
       <div className={styles.toolbar}>
         <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => navigate(-1)}>
-          返回
+          {t('detail.back')}
         </Button>
         <div style={{ display: 'flex', gap: '8px' }}>
           <Button icon={<GlobeRegular />} onClick={() => setCollectOpen(true)}>
-            网页采集
+            {t('edit.webCollect')}
           </Button>
           <Button appearance="primary" onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !title.trim()}>
-            {saveMut.isPending ? '保存中...' : '保存'}
+            {saveMut.isPending ? t('edit.saving') : t('common.save')}
           </Button>
         </div>
       </div>
@@ -707,8 +715,8 @@ export function EditPage() {
         <div className={styles.metaGrid}>
           <div className={styles.field}>
             <Label>
-              缩略图
-              {pendingThumbnail ? '（保存后上传）' : pendingRemoteThumb ? '（保存后从远程下载）' : ''}
+              {t('edit.thumbnail')}
+              {pendingThumbnail ? t('edit.thumbWillUpload') : pendingRemoteThumb ? t('edit.thumbWillDownload') : ''}
             </Label>
             <div className={styles.thumbBox}>
               {pendingThumbnail || pendingRemoteThumb || thumbnailPath ? (
@@ -721,11 +729,11 @@ export function EditPage() {
                         ? pendingRemoteThumb.url
                         : assetUrl(thumbnailPath)
                   }
-                  alt="缩略图"
+                  alt={t('edit.thumbnail')}
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <div className={styles.thumbEmpty}>无</div>
+                <div className={styles.thumbEmpty}>{t('common.none')}</div>
               )}
               <div className={styles.thumbActions}>
                 <Button
@@ -735,7 +743,7 @@ export function EditPage() {
                   icon={<ArrowUploadRegular />}
                   onClick={uploadThumbnail}
                 >
-                  {pendingThumbnail || pendingRemoteThumb ? '选择' : '上传'}
+                  {pendingThumbnail || pendingRemoteThumb ? t('edit.select') : t('edit.upload')}
                 </Button>
                 {(pendingThumbnail || pendingRemoteThumb || thumbnailPath) && (
                   <Button
@@ -745,7 +753,7 @@ export function EditPage() {
                     icon={<DeleteRegular />}
                     onClick={clearThumbnail}
                   >
-                    清除
+                    {t('edit.clear')}
                   </Button>
                 )}
               </div>
@@ -756,44 +764,31 @@ export function EditPage() {
             {/* 阅读权限与马甲同属「谁能看到这篇」，并排放在最上方 */}
             <div className={styles.row}>
               <div className={styles.field}>
-                <Label>阅读权限</Label>
+                <Label>{t('edit.readPermission')}</Label>
                 <Dropdown
-                  value={readLevel === 0 ? '0 - 公开（无需登录）' : `${readLevel} - 需权限 ${readLevel} 及以上`}
+                  value={`${readLevel} - ${readLevelText(readLevel)}`}
                   selectedOptions={[String(readLevel)]}
                   onOptionSelect={(_, d) => {
                     if (d.optionValue) setReadLevel(Number(d.optionValue));
                   }}
                 >
-                  <Option value="0" text="0 - 公开（无需登录）">
-                    0 - 公开（无需登录）
-                  </Option>
-                  <Option value="1" text="1 - 需权限 1 及以上">
-                    1 - 需权限 1 及以上
-                  </Option>
-                  <Option value="2" text="2 - 需权限 2 及以上">
-                    2 - 需权限 2 及以上
-                  </Option>
-                  <Option value="3" text="3 - 需权限 3 及以上">
-                    3 - 需权限 3 及以上
-                  </Option>
-                  <Option value="4" text="4 - 需权限 4 及以上">
-                    4 - 需权限 4 及以上
-                  </Option>
-                  <Option value="5" text="5 - 需权限 5（默认仅管理员）">
-                    5 - 需权限 5（默认仅管理员）
-                  </Option>
+                  {[0, 1, 2, 3, 4, 5].map((lv) => (
+                    <Option key={lv} value={String(lv)} text={`${lv} - ${readLevelText(lv)}`}>
+                      {`${lv} - ${readLevelText(lv)}`}
+                    </Option>
+                  ))}
                 </Dropdown>
               </div>
               {isAdmin && (
                 <div className={styles.field}>
-                  <Label>发布身份（马甲）</Label>
+                  <Label>{t('edit.authorMask')}</Label>
                   <Dropdown
                     value={
                       authorId == null
-                        ? '当前账号'
+                        ? t('edit.currentAccount')
                         : (() => {
                             const a = authors?.find((x) => x.id === authorId);
-                            return a ? a.nickname || a.username : `用户 #${authorId}`;
+                            return a ? a.nickname || a.username : t('edit.unknownUser', { id: authorId });
                           })()
                     }
                     selectedOptions={[String(authorId ?? 'me')]}
@@ -802,8 +797,8 @@ export function EditPage() {
                       setAuthorId(v === 'me' ? null : Number(v));
                     }}
                   >
-                    <Option value="me" text="当前账号">
-                      当前账号
+                    <Option value="me" text={t('edit.currentAccount')}>
+                      {t('edit.currentAccount')}
                     </Option>
                     {authors?.map((a) => (
                       <Option key={a.id} value={String(a.id)} text={a.nickname || a.username}>
@@ -818,26 +813,26 @@ export function EditPage() {
             {/* 分类与访问密码并排：两者都是单行控件，纵向各占一行会显得松散 */}
             <div className={styles.row}>
               <div className={styles.field}>
-                <Label>分类</Label>
+                <Label>{t('edit.category')}</Label>
                 <CategoryTreeSelect
                   categories={categoriesTree}
                   value={categoryId}
                   onChange={setCategoryId}
-                  placeholder="选择分类（可选）"
-                  emptyLabel="（无分类）"
+                  placeholder={t('edit.categoryPlaceholder')}
+                  emptyLabel={t('edit.noCategory')}
                   showCount
                   style={{ width: '100%' }}
                 />
               </div>
 
               <div className={styles.field}>
-                <Label htmlFor="pwd">访问密码</Label>
+                <Label htmlFor="pwd">{t('edit.accessPassword')}</Label>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   {/* flex:1 + minWidth:0：输入框随列宽伸缩，且并排放按钮时不会被自身最小宽度顶出列外 */}
                   <Input
                     id="pwd"
                     type="password"
-                    placeholder={hasPassword ? '已设置密码，留空则不修改' : '留空 = 不设密码'}
+                    placeholder={hasPassword ? t('edit.pwdSetLeaveEmpty') : t('edit.pwdEmpty')}
                     value={accessPassword}
                     onChange={(_, d) => {
                       setAccessPassword(d.value);
@@ -854,7 +849,7 @@ export function EditPage() {
                         setAccessPassword('');
                       }}
                     >
-                      {clearPassword ? '撤销清除' : '清除密码'}
+                      {clearPassword ? t('edit.undoClearPwd') : t('edit.clearPwd')}
                     </Button>
                   )}
                 </div>
@@ -862,14 +857,14 @@ export function EditPage() {
             </div>
 
             <div className={styles.field}>
-              <Label>合集</Label>
+              <Label>{t('filter.collection')}</Label>
               <PillPicker
                 options={collectionOptions}
                 selectedIds={collectionIds}
                 onChange={setCollectionIds}
-                searchPlaceholder="搜索合集：输入即过滤，点击结果即可选中"
-                emptyHint="还没有合集，可先在合集页面创建"
-                noMatchHint="没有匹配的合集"
+                searchPlaceholder={t('edit.searchCollection')}
+                emptyHint={t('edit.noCollections')}
+                noMatchHint={t('edit.noMatchCollection')}
               />
             </div>
           </div>

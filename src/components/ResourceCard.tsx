@@ -6,6 +6,7 @@ import { relativeTime } from '../lib/format';
 import { ITEM_TYPE_META } from '../types/models';
 import type { Resource } from '../types/models';
 import { useSharedStyles } from '../styles/shared';
+import { useLanguage } from '../i18n';
 import { CardCheckbox } from './Selection';
 import type { ViewMode } from '../stores/uiStore';
 
@@ -46,6 +47,7 @@ export function ResourceCard({
   onContextMenu,
 }: ResourceCardProps) {
   const s = useSharedStyles();
+  const { t } = useLanguage();
 
   const handleCardClick = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('[data-batch-checkbox]')) return;
@@ -64,17 +66,17 @@ export function ResourceCard({
 
   const metaEl = (
     <div className={s.cardMeta}>
-      <span>{relativeTime(r.created_at)}</span>
-      {r.item_types?.map((t) => {
-        const meta = ITEM_TYPE_META[t];
+      <span>{relativeTime(r.created_at, t)}</span>
+      {r.item_types?.map((ty) => {
+        const meta = ITEM_TYPE_META[ty];
         return meta ? (
-          <span key={t} title={meta.label} style={{ fontSize: '14px', lineHeight: 1 }}>
+          <span key={ty} title={t(meta.labelKey)} style={{ fontSize: '14px', lineHeight: 1 }}>
             {meta.icon}
           </span>
         ) : null;
       })}
       {r.has_password && (
-        <span title="需要访问密码" style={{ fontSize: '14px', lineHeight: 1 }}>
+        <span title={t('resourceCard.needPassword')} style={{ fontSize: '14px', lineHeight: 1 }}>
           🔒
         </span>
       )}
@@ -86,20 +88,20 @@ export function ResourceCard({
   const tagsEl =
     showTags && onTagClick && r.tags && r.tags.length > 0 ? (
       <div className={s.cardTags}>
-        {r.tags.slice(0, 3).map((t) => (
+        {r.tags.slice(0, 3).map((tag) => (
           <Badge
-            key={t.id}
+            key={tag.id}
             appearance="tint"
             color="brand"
             size="small"
-            title={`按标签「${t.name}」筛选`}
+            title={t('resourceCard.filterByTag', { name: tag.name })}
             style={{ cursor: 'pointer' }}
             onClick={(e) => {
               e.stopPropagation();
-              onTagClick(t.id);
+              onTagClick(tag.id);
             }}
           >
-            {t.name}
+            {tag.name}
           </Badge>
         ))}
         {r.tags.length > 3 && (

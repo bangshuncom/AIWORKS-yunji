@@ -8,16 +8,17 @@ import { resourceApi, collectionApi, tagApi, authorApi, assetUrl } from '../lib/
 import { Pagination } from './Pagination';
 import { relativeTime } from '../lib/format';
 import type { Resource, Collection, Tag, AuthorInfo } from '../types/models';
+import { useLanguage } from '../i18n';
 
 const PAGE_SIZE = 10;
 
 type SearchType = 'article' | 'collection' | 'tag' | 'author';
 
-const TYPE_OPTIONS: { key: SearchType; label: string; placeholder: string }[] = [
-  { key: 'article', label: '文章', placeholder: '搜索文章标题...' },
-  { key: 'collection', label: '合集', placeholder: '搜索合集名称...' },
-  { key: 'tag', label: '标签', placeholder: '搜索标签名称...' },
-  { key: 'author', label: '作者', placeholder: '搜索作者昵称...' },
+const TYPE_OPTIONS: { key: SearchType; labelKey: string; placeholderKey: string }[] = [
+  { key: 'article', labelKey: 'search.type.article', placeholderKey: 'search.placeholder.article' },
+  { key: 'collection', labelKey: 'search.type.collection', placeholderKey: 'search.placeholder.collection' },
+  { key: 'tag', labelKey: 'search.type.tag', placeholderKey: 'search.placeholder.tag' },
+  { key: 'author', labelKey: 'search.type.author', placeholderKey: 'search.placeholder.author' },
 ];
 
 const useStyles = makeStyles({
@@ -175,13 +176,15 @@ interface SearchDialogProps {
 
 export function SearchDialog({ open, onClose }: SearchDialogProps) {
   const styles = useStyles();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [type, setType] = useState<SearchType>('article');
   const [keyword, setKeyword] = useState('');
   const [page, setPage] = useState(1);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const typeMeta = TYPE_OPTIONS.find((t) => t.key === type)!;
+  const typeMeta = TYPE_OPTIONS.find((o) => o.key === type)!;
+  const typeLabel = t(typeMeta.labelKey);
 
   // 打开时聚焦输入框，关闭时重置
   useEffect(() => {
@@ -268,18 +271,18 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
 
   const renderResults = () => {
     if (!enabled) {
-      return <div className={styles.emptyState}>{`输入关键词搜索${typeMeta.label}`}</div>;
+      return <div className={styles.emptyState}>{t('search.prompt', { type: typeLabel })}</div>;
     }
     if (isFetching) {
       return (
         <div className={styles.emptyState}>
-          <Spinner label="搜索中..." />
+          <Spinner label={t('search.searching')} />
         </div>
       );
     }
     if (type === 'article') {
       const items: Resource[] = articleQuery.data?.items ?? [];
-      if (items.length === 0) return <div className={styles.emptyState}>未找到相关文章</div>;
+      if (items.length === 0) return <div className={styles.emptyState}>{t('search.noArticle')}</div>;
       return (
         <>
           {items.map((r) => (
@@ -292,9 +295,9 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
               <div className={styles.resultBody}>
                 <span className={styles.resultTitle}>{r.title}</span>
                 <span className={styles.resultMeta}>
-                  {r.author?.nickname || r.author?.username || '未知'}
+                  {r.author?.nickname || r.author?.username || t('search.unknown')}
                   <span>·</span>
-                  {relativeTime(r.created_at)}
+                  {relativeTime(r.created_at, t)}
                 </span>
               </div>
             </div>
@@ -304,7 +307,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
     }
     if (type === 'collection') {
       const items: Collection[] = collectionQuery.data?.items ?? [];
-      if (items.length === 0) return <div className={styles.emptyState}>未找到相关合集</div>;
+      if (items.length === 0) return <div className={styles.emptyState}>{t('search.noCollection')}</div>;
       return (
         <>
           {items.map((c) => (
@@ -317,7 +320,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
               <div className={styles.resultBody}>
                 <span className={styles.resultTitle}>{c.title}</span>
                 <span className={styles.resultMeta}>
-                  {c.resource_count != null && `共 ${c.resource_count} 篇`}
+                  {c.resource_count != null && t('search.totalArticles', { n: c.resource_count })}
                   {c.description ? (
                     <>
                       <span>·</span>
@@ -333,15 +336,17 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
     }
     if (type === 'tag') {
       const items: Tag[] = tagQuery.data?.items ?? [];
-      if (items.length === 0) return <div className={styles.emptyState}>未找到相关标签</div>;
+      if (items.length === 0) return <div className={styles.emptyState}>{t('search.noTag')}</div>;
       return (
         <>
-          {items.map((t) => (
-            <div key={t.id} className={styles.resultItem} onClick={() => go(`/?tag=${t.id}`)}>
+          {items.map((tag) => (
+            <div key={tag.id} className={styles.resultItem} onClick={() => go(`/?tag=${tag.id}`)}>
               <div className={styles.thumbPlaceholder}>#</div>
               <div className={styles.resultBody}>
-                <span className={styles.resultTitle}>{t.name}</span>
-                <span className={styles.resultMeta}>{t.count != null && `${t.count} 篇文章`}</span>
+                <span className={styles.resultTitle}>{tag.name}</span>
+                <span className={styles.resultMeta}>
+                  {tag.count != null && t('search.articleCount', { n: tag.count })}
+                </span>
               </div>
             </div>
           ))}
@@ -350,7 +355,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
     }
     // author
     const items: AuthorInfo[] = authorQuery.data?.items ?? [];
-    if (items.length === 0) return <div className={styles.emptyState}>未找到相关作者</div>;
+    if (items.length === 0) return <div className={styles.emptyState}>{t('search.noAuthor')}</div>;
     return (
       <>
         {items.map((a) => (
@@ -362,7 +367,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
             )}
             <div className={styles.resultBody}>
               <span className={styles.resultTitle}>{a.nickname || a.username}</span>
-              <span className={styles.resultMeta}>{a.resource_count} 篇文章</span>
+              <span className={styles.resultMeta}>{t('search.articleCount', { n: a.resource_count })}</span>
             </div>
           </div>
         ))}
@@ -378,24 +383,24 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
           <Dropdown
             className={styles.typeDropdown}
             style={{ width: '120px', minWidth: '120px' }}
-            value={typeMeta.label}
+            value={typeLabel}
             selectedOptions={[type]}
             onOptionSelect={(_, d) => setType(d.optionValue as SearchType)}
           >
-            {TYPE_OPTIONS.map((t) => (
-              <Option key={t.key} value={t.key} text={t.label}>
-                {t.label}
+            {TYPE_OPTIONS.map((o) => (
+              <Option key={o.key} value={o.key} text={t(o.labelKey)}>
+                {t(o.labelKey)}
               </Option>
             ))}
           </Dropdown>
           <Input
             className={styles.input}
-            placeholder={typeMeta.placeholder}
+            placeholder={t(typeMeta.placeholderKey)}
             value={keyword}
             onChange={(_, d) => setKeyword(d.value)}
             contentBefore={<SearchRegular />}
           />
-          <button className={styles.closeBtn} onClick={onClose} title="关闭">
+          <button className={styles.closeBtn} onClick={onClose} title={t('common.close')}>
             <DismissRegular />
           </button>
         </div>
