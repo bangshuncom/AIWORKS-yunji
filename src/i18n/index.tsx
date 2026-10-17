@@ -8,9 +8,10 @@
 //   3. 生效语言优先级：本地 localStorage 覆盖 ＞ 全局默认（管理员设定）＞ zh-CN。
 //   4. 切换语言只换 Context 与 <html lang>，不失效任何 React Query 缓存（业务数据与语言无关）。
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useUIStore } from '../stores/uiStore';
+import { useAuthStore } from '../stores/authStore';
 
 /** 语言清单项（与后端 LangInfo 对应；字段名走 camelCase 以贴合前端习惯） */
 export interface LanguageInfo {
@@ -125,6 +126,11 @@ interface LanguageContextValue {
   setLocalLanguage: (code: string | null) => void;
   /** 重新扫描 lang 目录（新增/改动了文件后调用） */
   refreshLanguages: () => Promise<void>;
+  /**
+   * 重新读取全局默认语言（管理员在语言页修改后必须调用）。
+   * Provider 挂载时只读一次，写库后不主动刷新的话下拉框与生效语言都会停在旧值上。
+   */
+  refreshGlobalDefault: () => Promise<void>;
 }
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
@@ -155,14 +161,23 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   const effective = localOverride || globalDefault || FALLBACK;
 
-  // 启动时：拿到全局默认语言（公开设置）+ 扫描语言清单
+  const loadGlobalDefault = useCallback(async () => {
+    try {
+      const pub = (await invoke<Record<string, string>>('get_public_settings')) as Record<string, string>;
+      if (pub.ui_language) setGlobalDefault(pub.ui_language);
+    } catch (e) {
+      console.warn('[i18n] 读取全局默认语言失败', e);
+    }
+  }, []);
+
+  // 启动时：拿到全局默认语言（公开设置）+ 扫描语言清单。
+  // 两者互不依赖，前者失败不阻断后者。
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      await loadGlobalDefault();
+      if (cancelled) return;
       try {
-        const pub = (await invoke<Record<string, string>>('get_public_settings')) as Record<string, string>;
-        if (cancelled) return;
-        if (pub.ui_language) setGlobalDefault(pub.ui_language);
         const list = (await invoke<LanguageInfo[]>('list_languages')) as LanguageInfo[];
         if (cancelled) return;
         setLanguages(list);
@@ -173,7 +188,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadGlobalDefault]);
 
   // 生效语言变化时：拉取完整字典（已含回退合并），替换本地渲染用字典
   useEffect(() => {
@@ -215,6 +230,19 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     setLanguages(list);
   }, []);
 
+  // 登录态确立（含登出后换账户登录）时重读全局默认：
+  // Provider 挂在最外层、不随路由卸载，仅靠挂载时那一次读取的话，
+  // 同进程内换账户后拿到的还是上一个账户期间读到的旧值。
+  const authUser = useAuthStore((s) => s.user);
+  const lastUserIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const id = authUser?.id ?? null;
+    if (id !== null && id !== lastUserIdRef.current) {
+      lastUserIdRef.current = id;
+      loadGlobalDefault();
+    }
+  }, [authUser, loadGlobalDefault]);
+
   // 供 React 之外的调用方（lib/dialog.ts 默认标题等）拿到当前语言的 t
   useEffect(() => {
     outsideT = t;
@@ -230,8 +258,19 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       ready,
       setLocalLanguage,
       refreshLanguages,
+      refreshGlobalDefault: loadGlobalDefault,
     }),
-    [t, languages, effective, globalDefault, localOverride, ready, setLocalLanguage, refreshLanguages],
+    [
+      t,
+      languages,
+      effective,
+      globalDefault,
+      localOverride,
+      ready,
+      setLocalLanguage,
+      refreshLanguages,
+      loadGlobalDefault,
+    ],
   );
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;

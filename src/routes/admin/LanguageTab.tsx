@@ -4,6 +4,7 @@
 // - 全局默认（仅管理员）：写到 settings.ui_language，对所有未自行选择语言的用户生效
 // 字典加载与生效语言由 LanguageProvider 统一管理（见 src/i18n）。
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Badge,
   Button,
@@ -25,8 +26,18 @@ import { useStyles } from './styles';
 
 export function LanguageTab() {
   const styles = useStyles();
-  const { t, languages, localOverride, setLocalLanguage, globalDefault, refreshLanguages, ready } = useLanguage();
+  const {
+    t,
+    languages,
+    localOverride,
+    setLocalLanguage,
+    globalDefault,
+    refreshLanguages,
+    refreshGlobalDefault,
+    ready,
+  } = useLanguage();
   const { isAdmin } = usePerms();
+  const queryClient = useQueryClient();
 
   const [langDir, setLangDir] = useState('');
   const [saving, setSaving] = useState(false);
@@ -45,6 +56,12 @@ export function LanguageTab() {
     setMsg(null);
     try {
       await i18nApi.setUiLanguage(code);
+      // 关键：LanguageProvider 的 globalDefault 只在挂载时读一次，写库后不会自动跟进。
+      // 不手动刷新的话，下拉框与生效语言都停在旧值上——表现为「无法修改」。
+      await refreshGlobalDefault();
+      // 同步失效其它组件缓存的公共/完整设置（与 GeneralTab 保存后的失效范围一致）
+      queryClient.invalidateQueries({ queryKey: ['public-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
       setMsg({ ok: true, text: t('lang.saved') });
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);

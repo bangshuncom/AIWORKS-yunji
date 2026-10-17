@@ -56,16 +56,22 @@ export const useUIStore = create<UIStore>((set) => ({
       save({ theme: next, viewMode: s.viewMode, language: s.language });
       return { theme: next };
     }),
-  setTheme: (t) => {
-    set({ theme: t });
-    save({ theme: t, viewMode: persisted.viewMode, language: persisted.language });
-  },
-  setViewMode: (mode) => {
-    set({ viewMode: mode });
-    save({ viewMode: mode, language: persisted.language });
-  },
-  setLanguage: (lang) => {
-    set({ language: lang });
-    save({ theme: persisted.theme, viewMode: persisted.viewMode, language: lang });
-  },
+  // 注意：save 写的是整条 Persisted，必须从**当前 state** 取另外两个字段。
+  // 早期版本图省事用了模块级初始快照 persisted，导致「设完语言再切主题/视图」时
+  // 语言覆盖被旧值擦掉（ViewSwitcher 的 setViewMode 是活跃调用路径）。
+  setTheme: (t) =>
+    set((s) => {
+      save({ theme: t, viewMode: s.viewMode, language: s.language });
+      return { theme: t };
+    }),
+  setViewMode: (mode) =>
+    set((s) => {
+      save({ theme: s.theme, viewMode: mode, language: s.language });
+      return { viewMode: mode };
+    }),
+  setLanguage: (lang) =>
+    set((s) => {
+      save({ theme: s.theme, viewMode: s.viewMode, language: lang });
+      return { language: lang };
+    }),
 }));
