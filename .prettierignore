@@ -1,0 +1,9 @@
+dist
+release
+node_modules
+src-tauri
+public
+data
+截图
+package-lock.json
+.workbuddy

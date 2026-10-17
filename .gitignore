@@ -46,3 +46,9 @@ coverage
 
 # Test scripts and temp files
 test/
+
+# Local scratch dir (db copies, exe backups, screenshots, python helpers)
+.temp/
+
+# WorkBuddy project data (local memory / session state, not for repo)
+.workbuddy/
